@@ -33,7 +33,11 @@ pub fn run() {
                 .unwrap();
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![])
+        .invoke_handler(tauri::generate_handler![
+            command::bnk_load_file,
+            command::bnk_save_file,
+            command::pck_load_header,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
