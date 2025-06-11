@@ -4,6 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { type DragDropEvent } from '@tauri-apps/api/window'
 import { type Event } from '@tauri-apps/api/event'
 import { ref, onMounted } from 'vue'
+import { ShowInfo } from '../utils/message'
 
 const DRAG_OVER_CLASS = 'el-tree-custom--drag-over'
 const CUSTOM_DATA_CLASS = 'el-tree-custom--data'
@@ -49,11 +50,10 @@ const handleDragEvent = (event: Event<DragDropEvent>) => {
 }
 
 const handleDrop = (event: Event<DragDropEvent>) => {
-  console.log('Drop event:', event)
-  console.log('dragOverNode:', dragOverNodeKey.value)
   if (dragOverNodeKey.value) {
     console.log('Dropped on node:', dragOverNodeKey.value)
     console.log('Dropped files:', (event.payload as { paths: string[] }).paths)
+    ShowInfo(`Dropped files on node: ${dragOverNodeKey.value}`)
     dragOverNodeKey.value = null
   }
 
