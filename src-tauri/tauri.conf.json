@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "mhws-sound-modder",
+        "title": "MHWs Sound Modder",
         "width": 1024,
         "height": 768
       }

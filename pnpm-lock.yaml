@@ -17,6 +17,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.5.0
         version: 2.5.0
+      '@tauri-apps/plugin-dialog':
+        specifier: ~2.2.2
+        version: 2.2.2
       element-plus:
         specifier: ^2.10.1
         version: 2.10.1(vue@3.5.16(typescript@5.8.3))
@@ -605,6 +608,9 @@ packages:
     resolution: {integrity: sha512-rAtHqG0Gh/IWLjN2zTf3nZqYqbo81oMbqop56rGTjrlWk9pTTAjkqOjSL9XQLIMZ3RbeVjveCqqCA0s8RnLdMg==}
     engines: {node: '>= 10'}
     hasBin: true
+
+  '@tauri-apps/plugin-dialog@2.2.2':
+    resolution: {integrity: sha512-Pm9qnXQq8ZVhAMFSEPwxvh+nWb2mk7LASVlNEHYaksHvcz8P6+ElR5U5dNL9Ofrm+uwhh1/gYKWswK8JJJAh6A==}
 
   '@tsconfig/node22@22.0.2':
     resolution: {integrity: sha512-Kmwj4u8sDRDrMYRoN9FDEcXD8UpBSaPQQ24Gz+Gamqfm7xxn+GBR7ge/Z7pK8OXNGyUzbSwJj+TH6B+DS/epyA==}
@@ -2610,6 +2616,10 @@ snapshots:
       '@tauri-apps/cli-win32-arm64-msvc': 2.5.0
       '@tauri-apps/cli-win32-ia32-msvc': 2.5.0
       '@tauri-apps/cli-win32-x64-msvc': 2.5.0
+
+  '@tauri-apps/plugin-dialog@2.2.2':
+    dependencies:
+      '@tauri-apps/api': 2.5.0
 
   '@tsconfig/node22@22.0.2': {}
 
