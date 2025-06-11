@@ -1,6 +1,8 @@
 mod command;
 mod event;
+mod ffmpeg;
 mod logger;
+// mod transcode;
 
 use std::sync::OnceLock;
 
@@ -21,13 +23,14 @@ pub fn run() {
     logger::Logger::init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let _ = APP_HANDLE.set(app.handle().clone());
             let main_window = app.get_webview_window("main").unwrap();
             main_window
                 .set_title(&format!(
-                    "MHWs Sount Modder - v{}",
+                    "MHWs Sound Modder - v{}",
                     env!("CARGO_PKG_VERSION")
                 ))
                 .unwrap();
