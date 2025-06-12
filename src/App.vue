@@ -27,8 +27,7 @@ body {
 
 .main-content {
   flex: 1 1 auto;
-  min-height: 0;
+  height: calc(100vh - 25px);
   overflow-y: auto;
-  padding-bottom: 25px;
 }
 </style>

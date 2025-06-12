@@ -11,8 +11,10 @@ declare module 'vue' {
     DraggableTree: typeof import('./components/DragOverTree.vue')['default']
     DragOverTree: typeof import('./components/DragOverTree.vue')['default']
     HelloWorld: typeof import('./components/HelloWorld.vue')['default']
+    InfoPanel: typeof import('./components/InfoPanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SplitPanel: typeof import('./components/SplitPanel.vue')['default']
     StatusBar: typeof import('./components/StatusBar.vue')['default']
   }
 }
