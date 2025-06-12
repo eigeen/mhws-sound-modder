@@ -13,6 +13,7 @@ export interface TreeNode {
   label: string
   key: string | number
   children?: TreeNode[]
+  icon?: string
 }
 
 export interface DropEvent {
@@ -130,6 +131,7 @@ const propsName = {
 </script>
 
 <template>
+  <!-- Tree -->
   <el-tree
     style="max-width: 600px"
     :data="data"
@@ -148,9 +150,16 @@ const propsName = {
   >
     <template #default="{ data }">
       <div
-        class="el-tree-custom--data"
-        :data-key="data.label"
+        class="el-tree-custom--data text-body-2-no-weight"
+        :data-key="data.key"
       >
+        <v-icon
+          v-if="data.icon"
+          color="primary"
+          size="small"
+          class="mr-1"
+          >{{ data.icon }}</v-icon
+        >
         <span>{{ data.label }}</span>
       </div>
     </template>
@@ -178,7 +187,7 @@ const propsName = {
 <style lang="scss">
 .el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content {
   background-color: rgba(135, 206, 235, 0.2);
-  font-weight: bold;
+  font-weight: bold !important;
 }
 
 .el-tree-custom--drag-over {
@@ -186,4 +195,13 @@ const propsName = {
 }
 </style>
 
-<style lang="scss" scoped></style>
+<style lang="scss" scoped>
+.text-body-2-no-weight {
+  font-size: 0.875rem;
+  /* font-weight: 400; */
+  line-height: 1.425;
+  letter-spacing: 0.0178571429em;
+  font-family: 'Roboto', sans-serif;
+  text-transform: none;
+}
+</style>

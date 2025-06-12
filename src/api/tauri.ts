@@ -12,7 +12,6 @@ export async function bnkLoadFile(
       stringToU32LE('DIDX'),
       stringToU32LE('HIRC'),
     ]
-    console.log('filter', sectionFilter)
   }
 
   return invoke('bnk_load_file', { path, sectionFilter })

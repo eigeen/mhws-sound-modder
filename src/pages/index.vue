@@ -38,23 +38,27 @@ const workspaceVisualTree = computed(() => {
           children: [],
         }
         const segmentTree = file.data.getSegmentTree()
-        console.log('segmentTree', segmentTree)
+        console.debug('segmentTree', segmentTree)
+
         root.children = segmentTree.nodes
           .map((node) => {
             if (node.type === 'MusicSegment') {
               return {
                 label: `Segment ${node.id}`,
                 key: node.id,
+                icon: 'mdi-segment',
                 children: node.children.map((node) => {
                   return {
                     label: `Track ${node.id}`,
                     key: node.id,
+                    icon: 'mdi-waveform',
                     children: node.playlist
                       .map((item) => {
                         if (item.type === 'Source') {
                           return {
                             label: `${item.id}.wem`,
                             key: Number(`${item.id}`), // idk why item.id.value is undefined
+                            icon: 'mdi-file-music',
                             children: [],
                           }
                         } else {
@@ -120,77 +124,6 @@ function handleDrop(event: DropEvent) {
 function handleNodeClick(node: TreeNode) {
   console.log(node)
 }
-
-const data: TreeNode[] = [
-  {
-    label: 'Level one 1',
-    key: 'Level one 1',
-    children: [
-      {
-        label: 'Level two 1-1',
-        key: 'Level two 1-1',
-        children: [
-          {
-            label: 'Level three 1-1-1',
-            key: 'Level three 1-1-1',
-          },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'Level one 2',
-    key: 'Level one 2',
-    children: [
-      {
-        label: 'Level two 2-1',
-        key: 'Level two 2-1',
-        children: [
-          {
-            label: 'Level three 2-1-1',
-            key: 'Level three 2-1-1',
-          },
-        ],
-      },
-      {
-        label: 'Level two 2-2',
-        key: 'Level two 2-2',
-        children: [
-          {
-            label: 'Level three 2-2-1',
-            key: 'Level three 2-2-1',
-          },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'Level one 3',
-    key: 'Level one 3',
-    children: [
-      {
-        label: 'Level two 3-1',
-        key: 'Level two 3-1',
-        children: [
-          {
-            label: 'Level three 3-1-1',
-            key: 'Level three 3-1-1',
-          },
-        ],
-      },
-      {
-        label: 'Level two 3-2',
-        key: 'Level two 3-2',
-        children: [
-          {
-            label: 'Level three 3-2-1',
-            key: 'Level three 3-2-1',
-          },
-        ],
-      },
-    ],
-  },
-]
 </script>
 
 <template>
