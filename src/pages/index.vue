@@ -1,51 +1,116 @@
 <script lang="ts" setup>
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, reactive, ref } from 'vue'
+import { PckHeader } from '@/models/pck'
+import { Bnk } from '@/libs/bnk'
 
-const showMenu = ref(false)
-const menuButtonRef = ref<HTMLElement | null>(null)
+type WorkspaceFile = BnkFile | PckFile
 
-const menuItems = [
-  { title: 'Open File', icon: 'mdi-folder-open', action: openFileDialog },
-]
-
-function handleClickOutside(event: MouseEvent) {
-  if (
-    menuButtonRef.value &&
-    !menuButtonRef.value.contains(event.target as Node)
-  ) {
-    showMenu.value = false
-  }
+interface Workspace {
+  files: WorkspaceFile[]
 }
 
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
+interface File<T> {
+  type: 'bnk' | 'pck'
+  data: T
+  defaultData: any
+  modifiedMap: { [key: string]: boolean }
+}
+
+interface BnkFile extends File<Bnk> {
+  type: 'bnk'
+}
+
+interface PckFile extends File<PckHeader> {
+  type: 'pck'
+}
+
+const workspace = reactive<Workspace>({ files: [] })
+
+const workspaceVisualTree = computed(() => {
+  return workspace.files
+    .map((file) => {
+      if (file.type === 'bnk') {
+        const root: TreeNode = {
+          label: file.data.name,
+          key: file.data.filePath,
+          children: [],
+        }
+        const segmentTree = file.data.getSegmentTree()
+        console.log('segmentTree', segmentTree)
+        root.children = segmentTree.nodes
+          .map((node) => {
+            if (node.type === 'MusicSegment') {
+              return {
+                label: `Segment ${node.id}`,
+                key: node.id,
+                children: node.children.map((node) => {
+                  return {
+                    label: `Track ${node.id}`,
+                    key: node.id,
+                    children: node.playlist
+                      .map((item) => {
+                        if (item.type === 'Source') {
+                          return {
+                            label: `${item.id}.wem`,
+                            key: Number(`${item.id}`), // idk why item.id.value is undefined
+                            children: [],
+                          }
+                        } else {
+                          return null
+                        }
+                      })
+                      .filter((item) => item !== null) as TreeNode[],
+                  }
+                }),
+              }
+            } else {
+              return null
+            }
+          })
+          .filter((node) => node !== null) as TreeNode[]
+        return root
+      }
+    })
+    .filter((node) => node !== null) as TreeNode[]
 })
 
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClickOutside)
-})
+const menuItems = [
+  { title: 'Open File', icon: 'mdi-folder-open', action: handleOpenFileDialog },
+]
 
-async function openFileDialog() {
-  const selected = await openDialog({
-    multiple: true,
-    filters: [
-      {
-        name: 'All Files',
-        extensions: ['*'],
-      },
-      {
-        name: 'Sound Bank',
-        extensions: ['bnk', 'sbnk', 'sbnk.X64'],
-      },
-      {
-        name: 'Sound Pack',
-        extensions: ['pck', 'pck.X64'],
-      },
-    ],
-  })
+async function handleOpenFileDialog() {
+  const selected =
+    (await openDialog({
+      multiple: true,
+      filters: [
+        {
+          name: 'All Files',
+          extensions: ['*'],
+        },
+        {
+          name: 'Sound Bank',
+          extensions: ['bnk', 'sbnk', 'sbnk.X64'],
+        },
+        {
+          name: 'Sound Pack',
+          extensions: ['pck', 'pck.X64'],
+        },
+      ],
+    })) ?? []
   console.log('Selected files:', selected)
+
+  for (const filePath of selected) {
+    const bnk = await Bnk.load(filePath)
+    const file: BnkFile = {
+      type: 'bnk',
+      data: bnk,
+      defaultData: null,
+      modifiedMap: {},
+    }
+    workspace.files.push(file)
+  }
 }
 
 function handleDrop(event: DropEvent) {
@@ -161,10 +226,27 @@ const data: TreeNode[] = [
   </div>
 
   <DragOverTree
-    :data="data"
+    :data="workspaceVisualTree"
     @node-click="handleNodeClick"
     @drop="handleDrop"
-  ></DragOverTree>
+  >
+    <template v-slot:contextmenu="props">
+      <v-list density="compact">
+        <v-list-item
+          value="rename"
+          title="重命名"
+          @click="console.log('Rename', props.data)"
+        >
+        </v-list-item>
+        <v-list-item
+          value="delete"
+          title="删除"
+          @click="console.log('Delete', props.data)"
+        >
+        </v-list-item>
+      </v-list>
+    </template>
+  </DragOverTree>
 </template>
 
 <style lang="scss" scoped>

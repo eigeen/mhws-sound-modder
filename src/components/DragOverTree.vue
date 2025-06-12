@@ -4,13 +4,14 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { type DragDropEvent } from '@tauri-apps/api/window'
 import { type Event } from '@tauri-apps/api/event'
 import { ref, onMounted } from 'vue'
+import type Node from 'element-plus/es/components/tree/src/model/node.mjs'
 
 const DRAG_OVER_CLASS = 'el-tree-custom--drag-over'
 const CUSTOM_DATA_CLASS = 'el-tree-custom--data'
 
 export interface TreeNode {
   label: string
-  key: string
+  key: string | number
   children?: TreeNode[]
 }
 
@@ -28,9 +29,41 @@ defineModel('selected', { required: false })
 const emit = defineEmits<{
   drop: [event: DropEvent]
   nodeClick: [data: TreeNode]
+  nodeContextmenu: [
+    event: PointerEvent,
+    data: TreeNode,
+    node: Node,
+    component: any,
+  ]
 }>()
 
 const dragOverNodeKey = ref<string | null>(null)
+const contextMenu = ref({
+  show: false,
+  x: 0,
+  y: 0,
+  data: null as TreeNode | null,
+  component: null,
+})
+
+function handleContextMenu(
+  event: PointerEvent,
+  data: TreeNode,
+  _node: any,
+  component: any
+) {
+  contextMenu.value = {
+    show: true,
+    x: event.clientX,
+    y: event.clientY,
+    data,
+    component,
+  }
+}
+
+function closeContextMenu() {
+  contextMenu.value.show = false
+}
 
 const isOverNode = (event: Event<DragDropEvent>, nodeEl: HTMLElement) => {
   if (event.payload.type === 'leave') return false
@@ -105,9 +138,15 @@ const propsName = {
     :expand-on-click-node="false"
     :current-node-key="selected"
     @node-click="(node) => emit('nodeClick', node)"
+    @node-contextmenu="
+      (event, data, node, component) => {
+        handleContextMenu(event, data, node, component)
+        emit('nodeContextmenu', event, data, node, component)
+      }
+    "
     highlight-current
   >
-    <template #default="{ node, data }">
+    <template #default="{ data }">
       <div
         class="el-tree-custom--data"
         :data-key="data.label"
@@ -116,6 +155,24 @@ const propsName = {
       </div>
     </template>
   </el-tree>
+
+  <!-- right click contextmenu on tree node -->
+  <v-menu
+    v-model="contextMenu.show"
+    :target="[contextMenu.x, contextMenu.y]"
+    absolute
+    offset-y
+    min-width="150px"
+    close-on-click
+    close-on-content-click
+    @update:model-value="closeContextMenu"
+  >
+    <slot
+      name="contextmenu"
+      v-bind="contextMenu"
+    >
+    </slot>
+  </v-menu>
 </template>
 
 <style lang="scss">
