@@ -33,6 +33,18 @@ const splitPanel = reactive({
   right: 5,
 })
 
+const isSearchExpanded = ref(false)
+const searchKeyword = ref('')
+const searchSource = computed(() => {
+  const sources: string[] = []
+  workspaceVisualTree.value.forEach((node) => {
+    iterVisualTree(node, (n) => {
+      sources.push(`${n.label}`)
+    })
+  })
+  return sources
+})
+
 const workspaceVisualTree = computed(() => {
   return workspace.files
     .map((file) => {
@@ -85,9 +97,18 @@ const workspaceVisualTree = computed(() => {
     .filter((node) => node !== null) as TreeNode[]
 })
 
-const menuItems = [
-  { title: 'Open File', icon: 'mdi-folder-open', action: handleOpenFileDialog },
-]
+function iterVisualTree(node: TreeNode, visitor: (node: TreeNode) => void) {
+  visitor(node)
+  if (node.children) {
+    node.children.forEach((child) => {
+      iterVisualTree(child, visitor)
+    })
+  }
+}
+
+function handleSearchFocus(total: number, current: number) {
+  console.log('Search focus', total, current)
+}
 
 async function handleOpenFileDialog() {
   const selected =
@@ -134,6 +155,10 @@ function handleDrop(event: DropEvent) {
 function handleNodeClick(node: TreeNode) {
   console.log(node)
 }
+
+const menuItems = [
+  { title: 'Open File', icon: 'mdi-folder-open', action: handleOpenFileDialog },
+]
 </script>
 
 <template>
@@ -168,6 +193,13 @@ function handleNodeClick(node: TreeNode) {
         </v-list>
       </v-menu>
     </div>
+
+    <Toolbar
+      v-model:is-search-expanded="isSearchExpanded"
+      v-model:search-keyword="searchKeyword"
+      :search-source="searchSource"
+      @search-focus="handleSearchFocus"
+    />
 
     <SplitPanel
       v-model:left-width="splitPanel.left"
@@ -293,6 +325,49 @@ function handleNodeClick(node: TreeNode) {
   background-color: transparent;
   // z-index: 100;
   padding: 8px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.toolbar-left {
+  flex: 1;
+  max-width: 300px;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-expanded {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap; /* 防止文本换行 */
+}
+
+.search-input {
+  width: 200px;
+  flex-shrink: 0; /* 禁止压缩 */
+}
+
+.search-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(0, 0, 0, 0.6);
+  font-size: 0.875rem;
+}
+
+.search-count {
+  margin: 0 4px;
 }
 
 .app-container {

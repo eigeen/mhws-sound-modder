@@ -16,5 +16,6 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     SplitPanel: typeof import('./components/SplitPanel.vue')['default']
     StatusBar: typeof import('./components/StatusBar.vue')['default']
+    Toolbar: typeof import('./components/Toolbar.vue')['default']
   }
 }
