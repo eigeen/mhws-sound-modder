@@ -21,7 +21,7 @@ export interface DropEvent {
   paths: string[]
 }
 
-defineProps<{
+const props = defineProps<{
   data: TreeNode[]
 }>()
 
@@ -38,6 +38,10 @@ const emit = defineEmits<{
   ]
 }>()
 
+defineExpose({ setExpanded, focusNode })
+
+const treeRef = ref<InstanceType<typeof ElTree>>()
+
 const dragOverNodeKey = ref<string | null>(null)
 const contextMenu = ref({
   show: false,
@@ -46,6 +50,20 @@ const contextMenu = ref({
   data: null as TreeNode | null,
   component: null,
 })
+
+function setExpanded(key: string | number, value: boolean) {
+  const node = treeRef.value?.store.nodesMap[key]
+  if (node) {
+    node.expanded = value
+  }
+}
+
+function focusNode(key: string | number) {
+  const node = treeRef.value?.store.nodesMap[key]
+  if (node) {
+    treeRef.value?.setCurrentNode(node, true)
+  }
+}
 
 function handleContextMenu(
   event: PointerEvent,
@@ -133,6 +151,7 @@ const propsName = {
 <template>
   <!-- Tree -->
   <el-tree
+    ref="treeRef"
     style="max-width: 600px"
     :data="data"
     :props="propsName"

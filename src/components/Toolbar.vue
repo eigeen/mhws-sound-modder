@@ -1,6 +1,15 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
 
+export type SearchSource = {
+  text: string
+  children: SearchSource[]
+}
+
+export interface SearchResult {
+  path: Array<number>
+}
+
 const isSearchExpanded = defineModel('isSearchExpanded', {
   type: Boolean,
   required: true,
@@ -11,13 +20,13 @@ const searchKeyword = defineModel('searchKeyword', {
 })
 
 const props = defineProps<{
-  searchSource: string[]
+  searchSource: SearchSource
 }>()
 const emit = defineEmits<{
-  searchFocus: [total: number, current: number]
+  searchFocus: [total: number, current: number, result: SearchResult]
 }>()
 
-const searchResults = ref<number[]>([])
+const searchResults = ref<SearchResult[]>([])
 const currentFocusIndex = ref(0)
 const searchResultCount = computed(() => searchResults.value.length)
 
@@ -36,16 +45,61 @@ function focusIndexWrappingAdd(delta: number) {
  */
 function doSearch() {
   const keyword = searchKeyword.value.trim().toLowerCase()
-  if (keyword) {
-    const results: number[] = []
-    props.searchSource.forEach((item, index) => {
-      if (item.toLowerCase().includes(keyword)) {
-        results.push(index)
-      }
-    })
-    searchResults.value = results
+  if (!keyword) {
+    // off search mode
+    searchResults.value = []
     currentFocusIndex.value = 0
+    return
   }
+
+  const results = searchFromSource(props.searchSource, (item) => {
+    const searchTarget = item
+    if (searchTarget.trim().toLowerCase().includes(keyword)) {
+      return true
+    }
+    return false
+  })
+  searchResults.value = results
+  currentFocusIndex.value = 0
+  // emit search focus event
+  if (searchResultCount.value > 0) {
+    const indexInSource = searchResults.value[currentFocusIndex.value]
+    emit(
+      'searchFocus',
+      searchResultCount.value,
+      currentFocusIndex.value,
+      indexInSource
+    )
+  }
+}
+
+function searchFromSource(
+  source: SearchSource,
+  predicate: (item: string) => boolean
+): SearchResult[] {
+  const results: SearchResult[] = []
+
+  function dfs(
+    index: number,
+    value: SearchSource,
+    path: number[]
+  ) {
+    const currentPath = [...path, index]
+
+    if (predicate(value.text)) {
+      results.push({
+        path: currentPath,
+      })
+    }
+    value.children.forEach((item, index) => {
+      dfs(index, item, currentPath)
+    })
+  }
+
+  source.children.forEach((item, index) => {
+    dfs(index, item, [])
+  })
+  return results
 }
 </script>
 
@@ -98,8 +152,14 @@ function doSearch() {
               :disabled="!searchResultCount"
               @click="
                 () => {
-                  emit('searchFocus', searchResultCount, currentFocusIndex)
                   focusIndexWrappingAdd(-1)
+                  const result = searchResults[currentFocusIndex]
+                  emit(
+                    'searchFocus',
+                    searchResultCount,
+                    currentFocusIndex,
+                    result
+                  )
                 }
               "
             ></v-btn>
@@ -110,8 +170,14 @@ function doSearch() {
               :disabled="!searchResultCount"
               @click="
                 () => {
-                  emit('searchFocus', searchResultCount, currentFocusIndex)
                   focusIndexWrappingAdd(1)
+                  const result = searchResults[currentFocusIndex]
+                  emit(
+                    'searchFocus',
+                    searchResultCount,
+                    currentFocusIndex,
+                    result
+                  )
                 }
               "
             ></v-btn>

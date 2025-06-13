@@ -5,6 +5,8 @@ import { computed, reactive, ref } from 'vue'
 import { Bnk } from '@/libs/bnk'
 import { Pck } from '@/libs/pck'
 import { ShowInfo } from '@/utils/message'
+import type DragOverTree from '@/components/DragOverTree.vue'
+import { SearchResult, SearchSource } from '@/components/Toolbar.vue'
 
 type WorkspaceFile = BnkFile | PckFile
 
@@ -32,18 +34,7 @@ const splitPanel = reactive({
   left: 5,
   right: 5,
 })
-
-const isSearchExpanded = ref(false)
-const searchKeyword = ref('')
-const searchSource = computed(() => {
-  const sources: string[] = []
-  workspaceVisualTree.value.forEach((node) => {
-    iterVisualTree(node, (n) => {
-      sources.push(`${n.label}`)
-    })
-  })
-  return sources
-})
+const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
 
 const workspaceVisualTree = computed(() => {
   return workspace.files
@@ -96,6 +87,33 @@ const workspaceVisualTree = computed(() => {
     })
     .filter((node) => node !== null) as TreeNode[]
 })
+const isSearchExpanded = ref(false)
+const searchKeyword = ref('')
+const searchSource = computed(() => {
+  const dfs = (node: TreeNode, source: SearchSource) => {
+    const childrenSource = {
+      text: node.label,
+      children: [],
+    }
+
+    if (node.children && source.children !== undefined) {
+      node.children.forEach((child) => {
+        dfs(child, childrenSource)
+      })
+    }
+    source.children.push(childrenSource)
+  }
+
+  const rootSource: SearchSource = {
+    text: '',
+    children: [],
+  }
+  // build a minimal tree structure for search
+  workspaceVisualTree.value.forEach((node) => {
+    dfs(node, rootSource)
+  })
+  return rootSource
+})
 
 function iterVisualTree(node: TreeNode, visitor: (node: TreeNode) => void) {
   visitor(node)
@@ -106,8 +124,35 @@ function iterVisualTree(node: TreeNode, visitor: (node: TreeNode) => void) {
   }
 }
 
-function handleSearchFocus(total: number, current: number) {
-  console.log('Search focus', total, current)
+function handleSearchFocus(
+  total: number,
+  current: number,
+  result: SearchResult
+) {
+  console.debug('Search focus', total, current, result)
+  // locate target node in visual tree
+  // get target label
+  let keys: (string | number)[] = []
+  let tempNodes: TreeNode[] = workspaceVisualTree.value
+  for (let index = 0; index < result.path.length; index++) {
+    const nodeIndex = result.path[index]
+    const node = tempNodes[nodeIndex]
+    keys.push(node.key)
+    tempNodes = node.children ?? []
+  }
+  if (keys.length === 0) {
+    console.warn('No target node found')
+    return
+  }
+
+  // focus target node
+  if (!dragTreeRef.value) {
+    console.warn('No dragTreeRef found')
+    return
+  }
+
+  // focus target node
+  dragTreeRef.value?.focusNode(keys[keys.length - 1])
 }
 
 async function handleOpenFileDialog() {
@@ -209,6 +254,7 @@ const menuItems = [
       <template #left>
         <div class="tree-container">
           <DragOverTree
+            ref="dragTreeRef"
             :data="workspaceVisualTree"
             @node-click="handleNodeClick"
             @drop="handleDrop"
