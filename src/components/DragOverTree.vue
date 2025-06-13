@@ -13,6 +13,7 @@ export interface TreeNode {
   label: string
   key: string | number
   children?: TreeNode[]
+  type?: string
   icon?: string
 }
 
@@ -21,7 +22,7 @@ export interface DropEvent {
   paths: string[]
 }
 
-const props = defineProps<{
+defineProps<{
   data: TreeNode[]
 }>()
 

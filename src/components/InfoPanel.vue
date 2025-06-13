@@ -1,5 +1,7 @@
 <script lang="ts" setup>
+import { TreeNode } from './DragOverTree.vue'
 
+const selectedNode = defineModel<TreeNode | null>({ required: true })
 </script>
 
 <template>

@@ -34,7 +34,27 @@ const splitPanel = reactive({
   left: 5,
   right: 5,
 })
+const selectedKey = ref<string | number | null>(null)
 const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
+
+const selectedNode = computed<TreeNode | null>(() => {
+  if (!selectedKey.value) {
+    return null
+  }
+
+  let targetNode: TreeNode | null = null
+  workspaceVisualTree.value.forEach((fileNode) => {
+    iterVisualTree(fileNode, (node) => {
+      if (targetNode) {
+        return
+      }
+      if (node.key === selectedKey.value) {
+        targetNode = node
+      }
+    })
+  })
+  return targetNode
+})
 
 const workspaceVisualTree = computed(() => {
   return workspace.files
@@ -87,6 +107,7 @@ const workspaceVisualTree = computed(() => {
     })
     .filter((node) => node !== null) as TreeNode[]
 })
+
 const isSearchExpanded = ref(false)
 const searchKeyword = ref('')
 const searchSource = computed(() => {
@@ -255,6 +276,7 @@ const menuItems = [
         <div class="tree-container">
           <DragOverTree
             ref="dragTreeRef"
+            v-model:selected="selectedKey"
             :data="workspaceVisualTree"
             @node-click="handleNodeClick"
             @drop="handleDrop"
@@ -358,7 +380,7 @@ const menuItems = [
       <template #right>
         <!-- Focused tree node details -->
         <div class="info-panel">
-          <InfoPanel></InfoPanel>
+          <InfoPanel v-model="selectedNode"></InfoPanel>
         </div>
       </template>
     </SplitPanel>

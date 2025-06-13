@@ -89,6 +89,13 @@ export interface PlayListItem {
   srcDuration: Ref<number>
 }
 
+export type MarkerType = 'EndFadeIn' | 'StartFadeOut'
+
+const MARKER_TYPE_MAP: { [id: number]: MarkerType } = {
+  43573010: 'EndFadeIn',
+  1539036744: 'StartFadeOut',
+}
+
 export class BnkVisitor {
   public visitBnk(bnk: Bnk): void {
     bnk.data.sections.forEach((section) => {
@@ -210,12 +217,24 @@ class MusicSegmentVisitor extends BnkVisitor {
   public override visitHircMusicSegment(entry: HircMusicSegmentEntry) {
     const data = entry.music_segment_initial_values
 
+    // get markers
+    let fade_in_end = ref(0)
+    let fade_out_start = ref(0)
+    data.markers.forEach((marker) => {
+      const ty = MARKER_TYPE_MAP[marker.id]
+      if (ty === 'EndFadeIn') {
+        fade_in_end = toRef(marker, 'position')
+      } else if (ty === 'StartFadeOut') {
+        fade_out_start = toRef(marker, 'position')
+      }
+    })
+
     const node: MusicSegmentNode = {
       type: 'MusicSegment',
       id: entry.id,
       duration: toRef(data, 'duration'),
-      fade_in_end: ref(0), // TODO
-      fade_out_start: ref(0),
+      fade_in_end,
+      fade_out_start,
       children: [],
     }
 
