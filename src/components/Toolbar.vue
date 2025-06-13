@@ -109,7 +109,7 @@ function searchFromSource(
       <v-text-field
         density="compact"
         variant="outlined"
-        placeholder="Unimplemented"
+        placeholder="Database Search"
         prepend-inner-icon="mdi-magnify"
         hide-details
         single-line

@@ -9,23 +9,24 @@ import {
   HircSoundEntry,
 } from '@/models/bnk/hirc'
 import { getFileName } from '@/utils/path'
-import { Reactive, reactive, ref, Ref, toRef } from 'vue'
+import { reactive, Reactive, ref, toRef } from 'vue'
+import { Pck } from './pck'
 
 export class Bnk {
-  public data: Reactive<BnkData>
+  public data: BnkData
   public name: string = ''
   public filePath: string = ''
   private relatedBnk: Bnk[] = []
-  //   private relatedPck: Pck[] = []
+  private relatedPck: Pck[] = []
   private segmentTree: SegmentTree | null = null
+  private flattenEntryMap: { [id: number]: any } = {}
 
   constructor(data: BnkData) {
-    this.data = reactive(data)
+    this.data = data
   }
 
   public static async load(filePath: string): Promise<Bnk> {
     const bnkData = await bnkLoadFile(filePath)
-    console.log('bnkData', bnkData)
     const bnk = new Bnk(bnkData)
     bnk.filePath = filePath
     bnk.name = getFileName(filePath)
@@ -43,11 +44,48 @@ export class Bnk {
   public getSegmentTree(): SegmentTree {
     if (!this.segmentTree) {
       this.segmentTree = new SegmentTree(this)
+      console.log('segment tree 2', this.segmentTree.nodes[0])
     }
 
     return this.segmentTree
   }
+
+  /**
+   * Get a flatten entry map.
+   * This map contains all entries refs by id.
+   */
+  public getFlattenEntryMap(): { [id: number]: any } {
+    if (Object.keys(this.flattenEntryMap).length > 0) {
+      return this.flattenEntryMap
+    }
+
+    // create
+    const flattenEntryMap: { [id: number]: any } = {}
+    const segmentTree = this.getSegmentTree()
+
+    // visit all nodes
+    function iterNode(node: EntryNode) {
+      flattenEntryMap[node.id] = node
+      if (node.type === 'MusicSegment') {
+        node.children.forEach((child) => {
+          iterNode(child)
+        })
+      } else if (node.type === 'MusicTrack') {
+        node.playlist.forEach((item) => {
+          iterNode(item)
+        })
+      }
+    }
+    segmentTree.nodes.forEach((node) => {
+      iterNode(node)
+    })
+
+    this.flattenEntryMap = flattenEntryMap
+    return flattenEntryMap
+  }
 }
+
+export type EntryNode = MusicSegmentNode | MusicTrackNode | PlayListItem
 
 /**
  * Music segment tree
@@ -59,15 +97,16 @@ export class SegmentTree {
     const visitor = new MusicSegmentVisitor()
     bnk.visit(visitor)
     this.nodes = visitor.musicSegments
+    console.log('segment tree 1', this.nodes[0])
   }
 }
 
 export interface MusicSegmentNode {
   type: 'MusicSegment'
   id: number
-  duration: Ref<number>
-  fade_in_end: Ref<number>
-  fade_out_start: Ref<number>
+  duration: Reactive<number>
+  fade_in_end: Reactive<number>
+  fade_out_start: Reactive<number>
   children: MusicTrackNode[]
 }
 
@@ -78,15 +117,19 @@ export interface MusicTrackNode {
 }
 
 export interface PlayListItem {
-  type: 'Track' | 'Source' | 'Event'
-  // available when type is 'Source' or 'Event'
-  id: Ref<number>
+  type: 'PlayListItem'
+  elementType: 'Track' | 'Source' | 'Event'
+  /**
+   * When type is 'Source' or 'Event', it's the element id.
+   * When type is 'Track', it's the track node id
+   */
+  id: number
   // available when type is 'Track'
   element?: MusicTrackNode
-  playAt: Ref<number>
-  beginTrimOffset: Ref<number>
-  endTrimOffset: Ref<number>
-  srcDuration: Ref<number>
+  playAt: Reactive<number>
+  beginTrimOffset: Reactive<number>
+  endTrimOffset: Reactive<number>
+  srcDuration: Reactive<number>
 }
 
 export type MarkerType = 'EndFadeIn' | 'StartFadeOut'
@@ -104,7 +147,6 @@ export class BnkVisitor {
   }
 
   public visitSection(section: Section): void {
-    console.log('section', section)
     if (section.type === 'Hirc') {
       section.entries.forEach((entry, idx) => {
         try {
@@ -169,37 +211,40 @@ class MusicSegmentVisitor extends BnkVisitor {
     const playlist = data.playlist
       .map((item) => {
         if (item.event_id !== 0) {
-          return {
-            type: 'Event',
-            id: toRef(item, 'event_id'),
+          return reactive({
+            type: 'PlayListItem',
+            elementType: 'Event',
+            id: item.event_id,
             element: null,
             playAt: toRef(item, 'play_at'),
             beginTrimOffset: toRef(item, 'begin_trim_offset'),
             endTrimOffset: toRef(item, 'end_trim_offset'),
             srcDuration: toRef(item, 'src_duration'),
-          }
+          })
         } else if (item.source_id !== 0) {
-          return {
-            type: 'Source',
-            id: toRef(item, 'source_id'),
+          return reactive({
+            type: 'PlayListItem',
+            elementType: 'Source',
+            id: item.source_id,
             element: null,
             playAt: toRef(item, 'play_at'),
             beginTrimOffset: toRef(item, 'begin_trim_offset'),
             endTrimOffset: toRef(item, 'end_trim_offset'),
             srcDuration: toRef(item, 'src_duration'),
-          }
+          })
         } else if (item.track_id !== 0) {
           const track = this.musicTracks[item.track_id]
           if (track) {
-            return {
-              type: 'Track',
-              id: toRef(item, 'track_id'),
+            return reactive({
+              type: 'PlayListItem',
+              elementType: 'Track',
+              id: item.track_id,
               element: track,
               playAt: toRef(item, 'play_at'),
               beginTrimOffset: toRef(item, 'begin_trim_offset'),
               endTrimOffset: toRef(item, 'end_trim_offset'),
               srcDuration: toRef(item, 'src_duration'),
-            }
+            })
           } else {
             console.warn(`Track ${item.track_id} not found in music tracks`)
           }
@@ -229,14 +274,14 @@ class MusicSegmentVisitor extends BnkVisitor {
       }
     })
 
-    const node: MusicSegmentNode = {
+    const node: MusicSegmentNode = reactive({
       type: 'MusicSegment',
       id: entry.id,
       duration: toRef(data, 'duration'),
       fade_in_end,
       fade_out_start,
       children: [],
-    }
+    })
 
     if (data.music_node_params.children.children.length > 0) {
       // Load track children

@@ -91,7 +91,6 @@ onUnmounted(() => {
     flex: v-bind('props.rightWidth');
     overflow-y: auto;
     border-left: 1px solid #ddd;
-    padding-left: 16px;
   }
 }
 </style>

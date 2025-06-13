@@ -3,7 +3,7 @@ import { ElTree } from 'element-plus'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { type DragDropEvent } from '@tauri-apps/api/window'
 import { type Event } from '@tauri-apps/api/event'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import type Node from 'element-plus/es/components/tree/src/model/node.mjs'
 
 const DRAG_OVER_CLASS = 'el-tree-custom--drag-over'
@@ -26,7 +26,7 @@ defineProps<{
   data: TreeNode[]
 }>()
 
-defineModel('selected', { required: false })
+const selected = defineModel('selected', { required: false })
 
 const emit = defineEmits<{
   drop: [event: DropEvent]
@@ -158,8 +158,8 @@ const propsName = {
     :props="propsName"
     node-key="key"
     :expand-on-click-node="false"
-    :current-node-key="selected"
     @node-click="(node) => emit('nodeClick', node)"
+    @current-change="(data, _node) => selected = data.key"
     @node-contextmenu="
       (event, data, node, component) => {
         handleContextMenu(event, data, node, component)

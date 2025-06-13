@@ -1,8 +1,8 @@
 <script lang="ts" setup>
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
-import { computed, reactive, ref } from 'vue'
-import { Bnk } from '@/libs/bnk'
+import { computed, reactive, ref, toRefs } from 'vue'
+import { Bnk, EntryNode } from '@/libs/bnk'
 import { Pck } from '@/libs/pck'
 import { ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
@@ -31,29 +31,35 @@ interface PckFile extends File<Pck> {
 
 const workspace = reactive<Workspace>({ files: [] })
 const splitPanel = reactive({
-  left: 5,
-  right: 5,
+  left: 3,
+  right: 7,
 })
 const selectedKey = ref<string | number | null>(null)
 const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
 
-const selectedNode = computed<TreeNode | null>(() => {
+const selectedEntryNode = computed<EntryNode | null>(() => {
   if (!selectedKey.value) {
     return null
   }
 
-  let targetNode: TreeNode | null = null
-  workspaceVisualTree.value.forEach((fileNode) => {
-    iterVisualTree(fileNode, (node) => {
-      if (targetNode) {
-        return
-      }
-      if (node.key === selectedKey.value) {
-        targetNode = node
-      }
-    })
-  })
+  const targetNode = flattenEntryMap.value[selectedKey.value]
+  if (!targetNode) {
+    console.info('Selected key not found in flattenEntryMap')
+    return null
+  }
   return targetNode
+})
+
+const flattenEntryMap = computed<{ [key: string]: EntryNode }>(() => {
+  let entries: { [key: string]: EntryNode } = {}
+  workspace.files.forEach((file) => {
+    if (file.type === 'bnk') {
+      const flattenEntryMap = file.data.getFlattenEntryMap()
+      entries = { ...entries, ...flattenEntryMap }
+    }
+  })
+
+  return entries
 })
 
 const workspaceVisualTree = computed(() => {
@@ -82,10 +88,10 @@ const workspaceVisualTree = computed(() => {
                     icon: 'mdi-waveform',
                     children: node.playlist
                       .map((item) => {
-                        if (item.type === 'Source') {
+                        if (item.elementType === 'Source') {
                           return {
                             label: `${item.id}.wem`,
-                            key: Number(`${item.id}`), // idk why item.id.value is undefined
+                            key: item.id,
                             icon: 'mdi-file-music',
                             children: [],
                           }
@@ -219,7 +225,7 @@ function handleDrop(event: DropEvent) {
 }
 
 function handleNodeClick(node: TreeNode) {
-  console.log(node)
+  //
 }
 
 const menuItems = [
@@ -380,7 +386,7 @@ const menuItems = [
       <template #right>
         <!-- Focused tree node details -->
         <div class="info-panel">
-          <InfoPanel v-model="selectedNode"></InfoPanel>
+          <InfoPanel v-model="selectedEntryNode"></InfoPanel>
         </div>
       </template>
     </SplitPanel>
@@ -455,7 +461,11 @@ const menuItems = [
   overflow-y: auto;
 }
 
+.tree-container {
+  padding: 1rem 0 1rem 0.5rem;
+}
+
 .info-panel {
-  padding: 16px;
+  padding: 1rem;
 }
 </style>
