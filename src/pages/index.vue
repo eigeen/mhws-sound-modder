@@ -1,66 +1,32 @@
 <script lang="ts" setup>
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
-import { computed, reactive, ref, toRaw } from 'vue'
-import { Bnk, EntryNode } from '@/libs/bnk'
-import { Pck } from '@/libs/pck'
+import { computed, reactive, ref } from 'vue'
+import { Bnk } from '@/libs/bnk'
 import { ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
 import { SearchResult, SearchSource } from '@/components/Toolbar.vue'
-import { BnkData } from '@/models/bnk'
+import { BnkFile, DataNode, useWorkspaceStore } from '@/stores/workspace'
 
-type WorkspaceFile = BnkFile | PckFile
-type FlattenEntryMap = { [key: string]: EntryNode }
-
-interface Workspace {
-  files: WorkspaceFile[]
-}
-
-interface File<T> {
-  type: 'bnk' | 'pck'
-  data: T
-}
-
-interface BnkFile extends File<Bnk> {
-  type: 'bnk'
-}
-
-interface PckFile extends File<Pck> {
-  // TODO
-  type: 'pck'
-}
+const workspace = useWorkspaceStore()
 
 const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
-const workspace = reactive<Workspace>({ files: [] })
 const splitPanel = reactive({
   left: 3,
   right: 7,
 })
-const selectedKey = ref<string | number | null>(null)
 
-const selectedEntryNode = computed<EntryNode | null>(() => {
-  if (!selectedKey.value) {
+const selectedDataNode = computed<DataNode | null>(() => {
+  if (!workspace.selectedKey) {
     return null
   }
 
-  const targetNode = flattenEntryMap.value[selectedKey.value]
+  const targetNode = workspace.flattenEntryMap[workspace.selectedKey]
   if (!targetNode) {
     console.info('Selected key not found in flattenEntryMap')
     return null
   }
   return targetNode
-})
-
-const flattenEntryMap = computed<FlattenEntryMap>(() => {
-  let entries: FlattenEntryMap = {}
-  workspace.files.forEach((file) => {
-    if (file.type === 'bnk') {
-      const flattenEntryMap = file.data.getFlattenEntryMap()
-      entries = { ...entries, ...flattenEntryMap }
-    }
-  })
-
-  return entries
 })
 
 const workspaceVisualTree = computed(() => {
@@ -142,10 +108,6 @@ const searchSource = computed(() => {
   })
   return rootSource
 })
-
-// File modification status
-const modifiedMap = ref<{ [key: string]: boolean }>({})
-// File modification watcher
 
 function iterVisualTree(node: TreeNode, visitor: (node: TreeNode) => void) {
   visitor(node)
@@ -286,7 +248,7 @@ const menuItems = [
         <div class="tree-container">
           <DragOverTree
             ref="dragTreeRef"
-            v-model:selected="selectedKey"
+            v-model:selected="workspace.selectedKey"
             :data="workspaceVisualTree"
             @node-click="handleNodeClick"
             @drop="handleDrop"
@@ -390,7 +352,7 @@ const menuItems = [
       <template #right>
         <!-- Focused tree node details -->
         <div class="info-panel">
-          <InfoPanel v-model="selectedEntryNode"></InfoPanel>
+          <InfoPanel v-model="selectedDataNode"></InfoPanel>
         </div>
       </template>
     </SplitPanel>

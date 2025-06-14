@@ -54,17 +54,17 @@ export class Bnk {
    * Get a flatten entry map.
    * This map contains all entries refs by id.
    */
-  public getFlattenEntryMap(): { [id: number]: EntryNode } {
+  public getFlattenEntryMap(): { [id: number]: HircNode } {
     if (Object.keys(this.flattenEntryMap).length > 0) {
       return this.flattenEntryMap
     }
 
     // create
-    const flattenEntryMap: { [id: number]: EntryNode } = {}
+    const flattenEntryMap: { [id: number]: HircNode } = {}
     const segmentTree = this.getSegmentTree()
 
     // visit all nodes
-    function iterNode(node: EntryNode) {
+    function iterNode(node: HircNode) {
       flattenEntryMap[node.id] = node
       if (node.type === 'MusicSegment') {
         node.children.forEach((child) => {
@@ -85,7 +85,7 @@ export class Bnk {
   }
 }
 
-export type EntryNode = MusicSegmentNode | MusicTrackNode | PlayListItem
+export type HircNode = MusicSegmentNode | MusicTrackNode | PlayListItem
 
 /**
  * Music segment tree

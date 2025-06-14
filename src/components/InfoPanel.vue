@@ -1,15 +1,47 @@
 <script lang="ts" setup>
-import { EntryNode, PlayListItem } from '@/libs/bnk'
+import {
+  HircNode,
+  MusicSegmentNode,
+  MusicTrackNode,
+  PlayListItem,
+} from '@/libs/bnk'
+import { DataNode, useWorkspaceStore } from '@/stores/workspace'
+import { ShowError } from '@/utils/message'
 import { computed, ref, watch } from 'vue'
 
-const data = defineModel<EntryNode | null>({ required: true })
+const dataNode = defineModel<DataNode | null>({ required: true })
 
-watch(data, () => {
-  console.log('data changed', data.value)
-  if (data.value?.type === 'MusicTrack') {
-    listSelected.value = [data.value.playlist[0]]
-  }
+const data = computed<HircNode | null>(() => {
+  return dataNode.value?.data || null
 })
+
+const workspace = useWorkspaceStore()
+
+let ignoreNextChange = false
+
+watch(
+  () => data.value,
+  (oldVal, newVal) => {
+    if (ignoreNextChange) {
+      ignoreNextChange = false
+      return
+    }
+    // if id changed, user may changed the selected node
+    if (oldVal?.id !== newVal?.id) {
+      console.log('Selected node changed', dataNode.value)
+      if (data.value?.type === 'MusicTrack') {
+        listSelected.value = [data.value.playlist[0]]
+      }
+    } else {
+      // id not changed, user may edited the values
+      const id = data.value?.id
+      if (id && dataNode.value) {
+        dataNode.value.dirty = true
+      }
+    }
+  },
+  { deep: true }
+)
 
 // Map the original values to more human-friendly and editable values
 const segmentFadeOutDuration = computed({
@@ -42,7 +74,7 @@ const rangeSliderValue = computed<number[]>({
     if (data.value?.type === 'MusicTrack' && listItemSelected.value) {
       return [
         listItemSelected.value.beginTrimOffset,
-        -listItemSelected.value.endTrimOffset, // negative value
+        -listItemSelected.value.endTrimOffset, // from negative value
       ]
     }
     return [0, 0]
@@ -55,7 +87,7 @@ const rangeSliderValue = computed<number[]>({
   },
 })
 
-function getTitle(node: EntryNode | null) {
+function getTitle(node: HircNode | null) {
   if (node === null) {
     return ''
   }
@@ -91,6 +123,55 @@ function getPlayListItemTitle(item: PlayListItem | null) {
       return `Event ${item.id}`
     default:
       return ''
+  }
+}
+
+function handleUndo() {
+  if (!dataNode.value || !data.value) return
+
+  let defaultData = dataNode.value.defaultData
+  console.debug(
+    'undo, dataNode.value.data, defaultData',
+    dataNode.value.data,
+    defaultData
+  )
+
+  try {
+    switch (data.value.type) {
+      case 'MusicSegment':
+        defaultData = defaultData as MusicSegmentNode
+        data.value.duration = defaultData.duration
+        data.value.fade_in_end = defaultData.fade_in_end
+        data.value.fade_out_start = defaultData.fade_out_start
+        break
+      case 'MusicTrack':
+        defaultData = defaultData as MusicTrackNode
+        // object fields are Proxy,
+        // so we need to find their real default values
+        const playlistIds = data.value.playlist.map((item) => item.id)
+        const playlistDefaultData = playlistIds.map(
+          (id) => workspace.flattenEntryMap[id]
+        )
+        data.value.playlist.forEach((item, index) => {
+          const defaultItem = playlistDefaultData[index]
+            .defaultData as PlayListItem
+          item.playAt = defaultItem.playAt
+          item.srcDuration = defaultItem.srcDuration
+          item.beginTrimOffset = defaultItem.beginTrimOffset
+          item.endTrimOffset = defaultItem.endTrimOffset
+        })
+        break
+      case 'PlayListItem':
+        throw new Error('PlayListItem unimplemented')
+        break
+    }
+    dataNode.value.dirty = false
+    console.info('Undo success')
+    // temporarily disable the watcher once to avoid loop
+    ignoreNextChange = true
+  } catch (err) {
+    ShowError(`Failed to undo: ${err}`)
+  } finally {
   }
 }
 </script>
@@ -194,6 +275,18 @@ function getPlayListItemTitle(item: PlayListItem | null) {
     <div v-if="data?.type === 'PlayListItem'">
       <!--  -->
     </div>
+
+    <div class="op-container">
+      <v-btn
+        class="text-none"
+        color="primary"
+        variant="outlined"
+        prepend-icon="mdi-undo"
+        @click="handleUndo"
+        :disabled="[false, undefined].includes(dataNode?.dirty)"
+        >Undo</v-btn
+      >
+    </div>
   </div>
 </template>
 
@@ -274,5 +367,11 @@ function getPlayListItemTitle(item: PlayListItem | null) {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.op-container {
+  display: flex;
+  align-items: center;
+  margin-top: 1rem;
 }
 </style>
