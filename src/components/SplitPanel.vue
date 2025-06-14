@@ -4,12 +4,28 @@ import { ref, onUnmounted } from 'vue'
 const props = defineProps({
   leftWidth: {
     type: Number,
-    default: 7
+    default: 7,
   },
   rightWidth: {
     type: Number,
-    default: 3
-  }
+    default: 3,
+  },
+  leftMinWidth: {
+    type: String,
+    default: null,
+  },
+  leftMaxWidth: {
+    type: String,
+    default: null,
+  },
+  rightMinWidth: {
+    type: String,
+    default: null,
+  },
+  rightMaxWidth: {
+    type: String,
+    default: null,
+  },
 })
 
 const emit = defineEmits(['update:leftWidth', 'update:rightWidth'])
@@ -29,11 +45,11 @@ function startDrag(e: MouseEvent) {
 
 function handleDrag(e: MouseEvent) {
   if (!isDragging.value || !splitLayout.value) return
-  
+
   const containerWidth = splitLayout.value.offsetWidth
   const deltaX = e.clientX - startX.value
   const newLeftWidth = startLeftWidth.value + (deltaX / containerWidth) * 10
-  
+
   // Limit min/max width
   if (newLeftWidth > 1 && newLeftWidth < 9) {
     emit('update:leftWidth', newLeftWidth)
@@ -54,11 +70,17 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="split-layout" ref="splitLayout">
+  <div
+    class="split-layout"
+    ref="splitLayout"
+  >
     <div class="left-panel">
       <slot name="left"></slot>
     </div>
-    <div class="split-handle" @mousedown="startDrag"></div>
+    <div
+      class="split-handle"
+      @mousedown="startDrag"
+    ></div>
     <div class="right-panel">
       <slot name="right"></slot>
     </div>
@@ -71,26 +93,30 @@ onUnmounted(() => {
   gap: 0;
   height: 100%;
   position: relative;
-  
+
   .left-panel {
     flex: v-bind('props.leftWidth');
     overflow: hidden;
+    min-width: v-bind('props.leftMinWidth');
+    max-width: v-bind('props.leftMaxWidth');
   }
-  
+
   .split-handle {
     width: 8px;
     cursor: col-resize;
     transition: background-color 0.2s;
-    
+
     &:hover {
       background-color: #ddd;
     }
   }
-  
+
   .right-panel {
     flex: v-bind('props.rightWidth');
     overflow-y: auto;
     border-left: 1px solid #ddd;
+    min-width: v-bind('props.rightMinWidth');
+    max-width: v-bind('props.rightMaxWidth');
   }
 }
 </style>

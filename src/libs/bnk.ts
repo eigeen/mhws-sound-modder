@@ -54,13 +54,13 @@ export class Bnk {
    * Get a flatten entry map.
    * This map contains all entries refs by id.
    */
-  public getFlattenEntryMap(): { [id: number]: any } {
+  public getFlattenEntryMap(): { [id: number]: EntryNode } {
     if (Object.keys(this.flattenEntryMap).length > 0) {
       return this.flattenEntryMap
     }
 
     // create
-    const flattenEntryMap: { [id: number]: any } = {}
+    const flattenEntryMap: { [id: number]: EntryNode } = {}
     const segmentTree = this.getSegmentTree()
 
     // visit all nodes

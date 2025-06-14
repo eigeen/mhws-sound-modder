@@ -32,7 +32,7 @@ const realSliderValue = computed({
 
 <template>
   <div class="editor-row">
-    <span class="label">
+    <span v-if="label" class="label">
       {{ label }}
     </span>
     <v-slider
@@ -62,11 +62,5 @@ const realSliderValue = computed({
   align-items: center;
   flex-direction: row;
   gap: 1rem;
-
-  // > *:first-child {
-  //   margin-right: 1rem;
-  // }
-  // > *:nth-child(2) {
-  // }
 }
 </style>

@@ -1,14 +1,16 @@
 <script lang="ts" setup>
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
-import { computed, reactive, ref, toRefs } from 'vue'
+import { computed, reactive, ref, toRaw } from 'vue'
 import { Bnk, EntryNode } from '@/libs/bnk'
 import { Pck } from '@/libs/pck'
 import { ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
 import { SearchResult, SearchSource } from '@/components/Toolbar.vue'
+import { BnkData } from '@/models/bnk'
 
 type WorkspaceFile = BnkFile | PckFile
+type FlattenEntryMap = { [key: string]: EntryNode }
 
 interface Workspace {
   files: WorkspaceFile[]
@@ -17,8 +19,6 @@ interface Workspace {
 interface File<T> {
   type: 'bnk' | 'pck'
   data: T
-  defaultData: any
-  modifiedMap: { [key: string]: boolean }
 }
 
 interface BnkFile extends File<Bnk> {
@@ -26,16 +26,17 @@ interface BnkFile extends File<Bnk> {
 }
 
 interface PckFile extends File<Pck> {
+  // TODO
   type: 'pck'
 }
 
+const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
 const workspace = reactive<Workspace>({ files: [] })
 const splitPanel = reactive({
   left: 3,
   right: 7,
 })
 const selectedKey = ref<string | number | null>(null)
-const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
 
 const selectedEntryNode = computed<EntryNode | null>(() => {
   if (!selectedKey.value) {
@@ -50,8 +51,8 @@ const selectedEntryNode = computed<EntryNode | null>(() => {
   return targetNode
 })
 
-const flattenEntryMap = computed<{ [key: string]: EntryNode }>(() => {
-  let entries: { [key: string]: EntryNode } = {}
+const flattenEntryMap = computed<FlattenEntryMap>(() => {
+  let entries: FlattenEntryMap = {}
   workspace.files.forEach((file) => {
     if (file.type === 'bnk') {
       const flattenEntryMap = file.data.getFlattenEntryMap()
@@ -142,6 +143,10 @@ const searchSource = computed(() => {
   return rootSource
 })
 
+// File modification status
+const modifiedMap = ref<{ [key: string]: boolean }>({})
+// File modification watcher
+
 function iterVisualTree(node: TreeNode, visitor: (node: TreeNode) => void) {
   visitor(node)
   if (node.children) {
@@ -213,8 +218,6 @@ async function handleOpenFileDialog() {
     const file: BnkFile = {
       type: 'bnk',
       data: bnk,
-      defaultData: null,
-      modifiedMap: {},
     }
     workspace.files.push(file)
   }
@@ -274,9 +277,10 @@ const menuItems = [
     />
 
     <SplitPanel
+      class="main-content"
       v-model:left-width="splitPanel.left"
       v-model:right-width="splitPanel.right"
-      class="main-content"
+      left-min-width="300px"
     >
       <template #left>
         <div class="tree-container">

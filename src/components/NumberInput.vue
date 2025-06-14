@@ -7,29 +7,17 @@ defineProps<{
 </script>
 
 <template>
-  <div class="editor-row">
-    <span class="label">
-      {{ label }}
-    </span>
-    <div>
-      <v-number-input
-        v-model="value"
-        width="200px"
-        variant="outlined"
-        density="compact"
-        :precision="null"
-        control-variant="hidden"
-        hide-details
-      ></v-number-input>
-    </div>
+  <div>
+    <v-number-input
+      v-model="value"
+      :label="label"
+      variant="outlined"
+      density="compact"
+      :precision="null"
+      control-variant="hidden"
+      hide-details
+    ></v-number-input>
   </div>
 </template>
 
-<style lang="scss" scoped>
-.editor-row {
-  display: flex;
-  align-items: center;
-  flex-direction: row;
-  gap: 1rem;
-}
-</style>
+<style lang="scss" scoped></style>
