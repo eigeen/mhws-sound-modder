@@ -1,13 +1,15 @@
 mod command;
 mod event;
-mod ffmpeg;
 mod logger;
-mod wwise;
+mod service;
+mod subprocess;
 // mod transcode;
 
 use std::sync::OnceLock;
 
 use tauri::{AppHandle, Manager as _};
+
+use crate::service::TranscodeService;
 
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
@@ -27,6 +29,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(TranscodeService::new())
         .setup(|app| {
             let _ = APP_HANDLE.set(app.handle().clone());
             let main_window = app.get_webview_window("main").unwrap();
@@ -42,6 +45,12 @@ pub fn run() {
             command::bnk_load_file,
             command::bnk_save_file,
             command::pck_load_header,
+            command::get_exe_path,
+            command::env_get_var,
+            command::transcode_set_paths,
+            command::transcode_auto_detect_paths,
+            command::transcode_check,
+            command::transcode_auto_transcode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -16,3 +16,20 @@ export async function bnkLoadFile(
 
   return invoke('bnk_load_file', { path, sectionFilter })
 }
+
+export async function getExePath(): Promise<string> {
+  return invoke('get_exe_path')
+}
+
+export async function envGetVar(name: string): Promise<string | null> {
+  return invoke('env_get_var', { name })
+}
+
+export class Transcode {
+  public static async autoTranscode(
+    input: string,
+    output: string
+  ): Promise<void> {
+    return invoke('transcode_auto_transcode', { input, output })
+  }
+}

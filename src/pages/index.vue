@@ -3,10 +3,15 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
 import { computed, reactive, ref } from 'vue'
 import { Bnk } from '@/libs/bnk'
-import { ShowInfo } from '@/utils/message'
+import { ShowError, ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
 import { SearchResult, SearchSource } from '@/components/Toolbar.vue'
 import { BnkFile, DataNode, useWorkspaceStore } from '@/stores/workspace'
+import { getExtension, getParentPath } from '@/utils/path'
+import { LocalDir } from '@/libs/localDir'
+import { join } from '@tauri-apps/api/path'
+import { exists } from '@tauri-apps/plugin-fs'
+import { Transcoder } from '@/libs/transcode'
 
 const workspace = useWorkspaceStore()
 
@@ -185,12 +190,46 @@ async function handleOpenFileDialog() {
   }
 }
 
-function handleDrop(event: DropEvent) {
-  console.log(event)
+const AUDIO_EXTS: Record<string, boolean> = {
+  wem: true,
+  wav: true,
+  ogg: true,
+  flac: true,
+  mp3: true,
+  aac: true,
 }
 
-function handleNodeClick(node: TreeNode) {
-  //
+async function handleDrop(event: DropEvent) {
+  console.log('handleDrop event', event)
+  const { key, paths } = event
+  const node = workspace.flattenEntryMap[key]
+  if (!node) {
+    // not found in map, ignore
+    console.info('drop key not found in map')
+    return
+  }
+
+  // currently we only support single file drop
+  // multiple file drop will be supported in the future
+  const filePath = paths[0]
+  // check if file is audio file
+  const ext = getExtension(filePath)
+  if (!ext || !AUDIO_EXTS[ext]) {
+    ShowError(`Unsupported file type: ${ext ?? '<no extension>'}`)
+  }
+
+  // transcode
+  // const tempDir = await LocalDir.getTempDir()
+  // const outputPath = await join(getParentPath(filePath) ?? '', `${node.data.id}.wem`)
+  let outputPath: string;
+  try {
+    outputPath = await Transcoder.getInstance().transcode(filePath, 'wem')
+  } catch (err) {
+    ShowError(`Failed to transcode: ${err}`)
+    return
+  }
+
+  console.log('transcode outputPath', outputPath)
 }
 
 const menuItems = [
@@ -250,7 +289,6 @@ const menuItems = [
             ref="dragTreeRef"
             v-model:selected="workspace.selectedKey"
             :data="workspaceVisualTree"
-            @node-click="handleNodeClick"
             @drop="handleDrop"
           >
             <!-- Right click context menu settings -->

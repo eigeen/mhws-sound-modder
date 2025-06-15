@@ -2062,6 +2062,7 @@ version = "0.1.0"
 dependencies = [
  "eyre",
  "log",
+ "parking_lot",
  "re-sound",
  "serde",
  "serde_json",

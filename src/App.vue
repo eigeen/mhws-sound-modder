@@ -8,7 +8,18 @@
 </template>
 
 <script lang="ts" setup>
-// 
+import { window } from '@tauri-apps/api'
+import { LocalDir } from './libs/localDir'
+
+// Register onClose event
+const mainWindow = window.getCurrentWindow()
+mainWindow.onCloseRequested(async () => {
+  // clear temp files
+  try {
+    await LocalDir.clearTempDir()
+  } finally {
+  }
+})
 </script>
 
 <style lang="scss">

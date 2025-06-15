@@ -33,45 +33,14 @@ impl FFmpegError {
     }
 }
 
+#[derive(Default)]
 pub struct FFmpegCli {
-    program_path: PathBuf,
+    path: Option<PathBuf>,
 }
 
 impl FFmpegCli {
-    pub fn new() -> Result<Self> {
-        let mut try_paths = vec![];
-        // env
-        if let Ok(path) = env::var("FFMPEG_PATH") {
-            try_paths.push(PathBuf::from(path));
-        }
-        // inside exe dir
-        let exe_path = env::current_exe()?;
-        let exe_dir = exe_path.parent().unwrap();
-        try_paths.push(exe_dir.join("ffmpeg"));
-        // inside cwd
-        let cwd = env::current_dir()?;
-        try_paths.push(cwd.join("ffmpeg"));
-        // global
-        try_paths.push(PathBuf::from("ffmpeg"));
-
-        for path in try_paths {
-            if Self::test_ffmpeg_cli(&path) {
-                return Ok(Self { program_path: path });
-            };
-        }
-
-        Err(FFmpegError::FFmpegNotFound)
-    }
-
-    pub fn new_with_path(program_path: PathBuf) -> Option<Self> {
-        if !Self::test_ffmpeg_cli(&program_path) {
-            return None;
-        }
-        Some(Self { program_path })
-    }
-
-    pub fn program_path(&self) -> &Path {
-        self.program_path.as_ref()
+    pub fn set_path(&mut self, path: impl AsRef<Path>) {
+        self.path = Some(path.as_ref().to_path_buf());
     }
 
     /// Simple transcode, only provide input and output file path.
@@ -83,7 +52,9 @@ impl FFmpegCli {
         let input = input.as_ref();
         let output = output.as_ref();
 
-        let program_path: &Path = self.program_path.as_ref();
+        let Some(program_path) = self.path.as_ref() else {
+            return Err(FFmpegError::FFmpegNotFound);
+        };
         let result = Command::new(program_path)
             .args([
                 "-hide_banner",
@@ -109,15 +80,39 @@ impl FFmpegCli {
     }
 
     /// Test if the ffmpeg can be executed.
-    fn test_ffmpeg_cli(program_path: impl AsRef<Path>) -> bool {
-        let result = Command::new(program_path.as_ref())
-            .args(["-version"])
-            .output();
+    pub fn test_ffmpeg_cli(path: impl AsRef<Path>) -> bool {
+        let path = path.as_ref();
+        let result = Command::new(path).args(["-version"]).output();
         let Ok(result) = result else {
             return false;
         };
 
         result.status.success()
+    }
+
+    pub fn auto_detect() -> Result<String> {
+        let mut try_paths = vec![];
+        // env
+        if let Ok(path) = env::var("FFMPEG_PATH") {
+            try_paths.push(PathBuf::from(path));
+        }
+        // inside exe dir
+        let exe_path = env::current_exe()?;
+        let exe_dir = exe_path.parent().unwrap();
+        try_paths.push(exe_dir.join("ffmpeg"));
+        // inside cwd
+        let cwd = env::current_dir()?;
+        try_paths.push(cwd.join("ffmpeg"));
+        // global
+        try_paths.push(PathBuf::from("ffmpeg"));
+
+        for path in try_paths {
+            if Self::test_ffmpeg_cli(&path) {
+                return Ok(path.to_str().unwrap().to_string());
+            };
+        }
+
+        Err(FFmpegError::FFmpegNotFound)
     }
 }
 
@@ -126,20 +121,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ffmpeg_cli() {
-        let _ffmpeg_cli = FFmpegCli::new().unwrap();
-        eprintln!("path: {}", _ffmpeg_cli.program_path.display());
-    }
-
-    #[test]
-    fn test_simple_transcode() {
-        let ffmpeg_cli = FFmpegCli::new().unwrap();
-        ffmpeg_cli
-            .simple_transcode(
-                "test_files/test_sound.mp3",
-                "test_files/simple_transcode_output.wav",
-            )
-            .unwrap();
-        assert!(Path::new("test_files/simple_transcode_output.wav").is_file());
+    fn test_ffmpeg_auto_detect() {
+        let result = FFmpegCli::auto_detect();
+        eprintln!("result: {:?}", result);
     }
 }

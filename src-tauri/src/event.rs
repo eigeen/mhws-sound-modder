@@ -22,15 +22,21 @@ pub enum LogLevel {
     Debug,
 }
 
-pub struct SystemEventSender;
+pub struct SystemEventSender {}
 
 impl SystemEventSender {
+    pub fn new() -> Self {
+        Self {}
+    }
+
     pub fn send(&self, event: SystemEvent) {
         let Some(app) = APP_HANDLE.get() else {
             return;
         };
+        // send the event
         if let Err(e) = app.emit("system", event) {
             eprintln!("Failed to send system event: {}", e);
+            println!("Failed to send system event: {}", e);
         }
     }
 

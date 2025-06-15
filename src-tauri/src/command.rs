@@ -1,8 +1,13 @@
+use serde::{Deserialize, Serialize};
+use tauri::State;
+
+use crate::service::TranscodeService;
+
 fn map_result<F, V>(f: F) -> std::result::Result<V, String>
 where
     F: FnOnce() -> std::result::Result<V, eyre::Error>,
 {
-    f().map_err(|e| e.to_string())
+    f().map_err(|e| format!("{:#}", e))
 }
 
 #[tauri::command]
@@ -52,4 +57,66 @@ pub fn pck_load_header(path: &str) -> Result<re_sound::pck::PckHeader, String> {
 
         Ok(re_sound::pck::PckHeader::from_reader(&mut reader)?)
     })
+}
+
+#[tauri::command]
+pub fn get_exe_path() -> Result<String, String> {
+    map_result(|| {
+        let path = std::env::current_exe()?;
+        Ok(path.to_str().unwrap().to_string())
+    })
+}
+
+#[tauri::command]
+pub fn env_get_var(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscodePaths {
+    pub ffmpeg: Option<String>,
+    pub wwise_console: Option<String>,
+    pub vgmstream: Option<String>,
+}
+
+#[tauri::command]
+pub fn transcode_set_paths(
+    service: State<TranscodeService>,
+    paths: TranscodePaths,
+) -> Result<(), String> {
+    if let Some(path) = paths.ffmpeg {
+        service.set_ffmpeg_path(path);
+    }
+    if let Some(path) = paths.wwise_console {
+        service.set_wwise_path(path);
+    }
+    if let Some(path) = paths.vgmstream {
+        service.set_vgmstream_path(&path);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn transcode_auto_detect_paths(
+    _service: State<TranscodeService>,
+) -> Result<TranscodePaths, String> {
+    Err("Not implemented yet".to_string())
+}
+
+/// Check shell path settings can work.
+/// Returns: Some(path) if it works, None if it fails or not set.
+#[tauri::command]
+pub fn transcode_check(_service: State<TranscodeService>) -> Result<TranscodePaths, String> {
+    Err("Not implemented yet".to_string())
+}
+
+#[tauri::command]
+pub fn transcode_auto_transcode(
+    service: State<TranscodeService>,
+    input: &str,
+    output: &str,
+) -> Result<(), String> {
+    map_result(|| service.auto_transcode(input, output))
 }
