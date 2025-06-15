@@ -2,10 +2,8 @@ import { Bnk, HircNode } from '@/libs/bnk'
 import { Pck } from '@/libs/pck'
 import { defineStore } from 'pinia'
 import {
-  computed,
   isReactive,
   isRef,
-  reactive,
   Reactive,
   ref,
   toRaw,

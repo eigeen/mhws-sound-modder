@@ -276,7 +276,10 @@ function handleUndo() {
       <!--  -->
     </div>
 
-    <div class="op-container">
+    <div
+      v-if="dataNode"
+      class="op-container"
+    >
       <v-btn
         class="text-none"
         color="primary"

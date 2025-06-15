@@ -1,10 +1,10 @@
 import { MusicNodeParams } from "./music_segment";
 
-export interface HircMusicRanSecCntr {
-    music_ran_sec_cntr_initial_values: MusicRanSecCntrInitialValues;
+export interface HircMusicRanSeqCntr {
+    music_ran_seq_cntr_initial_values: MusicRanSeqCntrInitialValues;
 }
 
-export interface MusicRanSecCntrInitialValues {
+export interface MusicRanSeqCntrInitialValues {
     music_trans_node_params: MusicTransNodeParams;
     num_play_list_items: number;
     play_list_items: AkMusicRanSeqPlaylistItem[];

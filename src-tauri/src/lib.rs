@@ -2,6 +2,7 @@ mod command;
 mod event;
 mod ffmpeg;
 mod logger;
+mod wwise;
 // mod transcode;
 
 use std::sync::OnceLock;

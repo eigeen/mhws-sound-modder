@@ -1,4 +1,4 @@
-import { HircMusicRanSecCntr } from './music_ran_sec_cntr'
+import { HircMusicRanSeqCntr } from './music_ran_seq_cntr'
 import { HircMusicSegment } from './music_segment'
 import { HircMusicTrack } from './music_track'
 
@@ -106,7 +106,7 @@ export interface HircMusicSwitchContainerEntry extends BaseHircEntry {
 
 export interface HircMusicRanSeqCntrEntry extends BaseHircEntry {
   entry_type: HircEntryType.MusicRanSeqCntr
-  data: HircMusicRanSecCntr
+  data: HircMusicRanSeqCntr
 }
 
 export interface HircAttenuationEntry extends BaseHircEntry {
