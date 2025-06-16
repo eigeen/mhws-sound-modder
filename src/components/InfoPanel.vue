@@ -137,6 +137,7 @@ function handleUndo() {
   )
 
   try {
+    // restore the original values
     switch (data.value.type) {
       case 'MusicSegment':
         defaultData = defaultData as MusicSegmentNode
@@ -150,7 +151,7 @@ function handleUndo() {
         // so we need to find their real default values
         const playlistIds = data.value.playlist.map((item) => item.id)
         const playlistDefaultData = playlistIds.map(
-          (id) => workspace.flattenEntryMap[id]
+          (id) => workspace.flattenNodeMap[id]
         )
         data.value.playlist.forEach((item, index) => {
           const defaultItem = playlistDefaultData[index]
@@ -162,10 +163,14 @@ function handleUndo() {
         })
         break
       case 'PlayListItem':
-        throw new Error('PlayListItem unimplemented')
+        // remove replace item
+        delete workspace.replaceList[data.value.id]
         break
     }
-    dataNode.value.dirty = false
+    // restore status
+    if (dataNode.value.data.type !== 'PlayListItem') {
+      dataNode.value.dirty = false
+    }
     console.info('Undo success')
     // temporarily disable the watcher once to avoid loop
     ignoreNextChange = true

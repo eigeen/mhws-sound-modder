@@ -1,16 +1,13 @@
 <script lang="ts" setup>
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, toRef } from 'vue'
 import { Bnk } from '@/libs/bnk'
 import { ShowError, ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
 import { SearchResult, SearchSource } from '@/components/Toolbar.vue'
 import { BnkFile, DataNode, useWorkspaceStore } from '@/stores/workspace'
-import { getExtension, getParentPath } from '@/utils/path'
-import { LocalDir } from '@/libs/localDir'
-import { join } from '@tauri-apps/api/path'
-import { exists } from '@tauri-apps/plugin-fs'
+import { getExtension } from '@/utils/path'
 import { Transcoder } from '@/libs/transcode'
 
 const workspace = useWorkspaceStore()
@@ -26,7 +23,7 @@ const selectedDataNode = computed<DataNode | null>(() => {
     return null
   }
 
-  const targetNode = workspace.flattenEntryMap[workspace.selectedKey]
+  const targetNode = workspace.flattenNodeMap[workspace.selectedKey]
   if (!targetNode) {
     console.info('Selected key not found in flattenEntryMap')
     return null
@@ -35,6 +32,13 @@ const selectedDataNode = computed<DataNode | null>(() => {
 })
 
 const workspaceVisualTree = computed(() => {
+  function getDirtyRef(id: string | number) {
+    return (
+      (toRef(workspace.flattenNodeMap[id], 'dirty') as unknown as boolean) ??
+      false
+    )
+  }
+
   return workspace.files
     .map((file) => {
       if (file.type === 'bnk') {
@@ -53,11 +57,13 @@ const workspaceVisualTree = computed(() => {
                 label: `Segment ${node.id}`,
                 key: node.id,
                 icon: 'mdi-segment',
+                dirty: getDirtyRef(node.id),
                 children: node.children.map((node) => {
                   return {
                     label: `Track ${node.id}`,
                     key: node.id,
                     icon: 'mdi-waveform',
+                    dirty: getDirtyRef(node.id),
                     children: node.playlist
                       .map((item) => {
                         if (item.elementType === 'Source') {
@@ -65,6 +71,7 @@ const workspaceVisualTree = computed(() => {
                             label: `${item.id}.wem`,
                             key: item.id,
                             icon: 'mdi-file-music',
+                            dirty: getDirtyRef(item.id),
                             children: [],
                           }
                         } else {
@@ -202,10 +209,21 @@ const AUDIO_EXTS: Record<string, boolean> = {
 async function handleDrop(event: DropEvent) {
   console.log('handleDrop event', event)
   const { key, paths } = event
-  const node = workspace.flattenEntryMap[key]
+  const node = workspace.flattenNodeMap[key]
   if (!node) {
     // not found in map, ignore
     console.info('drop key not found in map')
+    return
+  }
+  // check if drop is valid
+  if (
+    !(
+      node.data &&
+      node.data.type === 'PlayListItem' &&
+      node.data.elementType === 'Source'
+    )
+  ) {
+    ShowError('Audio replace is only supported for source nodes.')
     return
   }
 
@@ -219,17 +237,38 @@ async function handleDrop(event: DropEvent) {
   }
 
   // transcode
-  // const tempDir = await LocalDir.getTempDir()
-  // const outputPath = await join(getParentPath(filePath) ?? '', `${node.data.id}.wem`)
-  let outputPath: string;
+  let outputPath: string
   try {
     outputPath = await Transcoder.getInstance().transcode(filePath, 'wem')
   } catch (err) {
     ShowError(`Failed to transcode: ${err}`)
     return
   }
+  console.debug('transcode outputPath', outputPath)
 
-  console.log('transcode outputPath', outputPath)
+  // add to replace list
+  workspace.replaceList[key] = {
+    type: 'audio',
+    id: key,
+    path: outputPath,
+  }
+  console.info(`replace audio successfully: ${key} -> ${outputPath}`)
+
+  // apply parent linked changes
+  let loopGuard = 32
+  let parentNode: DataNode | null = node
+  while (node.parent && loopGuard > 0) {
+    loopGuard--
+    parentNode = node.parent
+    switch (parentNode.data.type) {
+      case 'MusicTrack':
+        // TODO: update src duration
+        break
+      case 'MusicSegment':
+        // nothing
+        break
+    }
+  }
 }
 
 const menuItems = [

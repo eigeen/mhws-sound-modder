@@ -19,7 +19,6 @@ export class Bnk {
   private relatedBnk: Bnk[] = []
   private relatedPck: Pck[] = []
   private segmentTree: SegmentTree | null = null
-  private flattenEntryMap: { [id: number]: any } = {}
 
   constructor(data: BnkData) {
     this.data = data
@@ -48,40 +47,6 @@ export class Bnk {
     }
 
     return this.segmentTree
-  }
-
-  /**
-   * Get a flatten entry map.
-   * This map contains all entries refs by id.
-   */
-  public getFlattenEntryMap(): { [id: number]: HircNode } {
-    if (Object.keys(this.flattenEntryMap).length > 0) {
-      return this.flattenEntryMap
-    }
-
-    // create
-    const flattenEntryMap: { [id: number]: HircNode } = {}
-    const segmentTree = this.getSegmentTree()
-
-    // visit all nodes
-    function iterNode(node: HircNode) {
-      flattenEntryMap[node.id] = node
-      if (node.type === 'MusicSegment') {
-        node.children.forEach((child) => {
-          iterNode(child)
-        })
-      } else if (node.type === 'MusicTrack') {
-        node.playlist.forEach((item) => {
-          iterNode(item)
-        })
-      }
-    }
-    segmentTree.nodes.forEach((node) => {
-      iterNode(node)
-    })
-
-    this.flattenEntryMap = flattenEntryMap
-    return flattenEntryMap
   }
 }
 

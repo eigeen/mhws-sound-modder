@@ -15,6 +15,7 @@ export interface TreeNode {
   children?: TreeNode[]
   type?: string
   icon?: string
+  dirty?: boolean
 }
 
 export interface DropEvent {
@@ -51,6 +52,7 @@ const contextMenu = ref({
   data: null as TreeNode | null,
   component: null,
 })
+const defaultExpandIds = ref<(string | number)[]>([])
 
 function setExpanded(key: string | number, value: boolean) {
   const node = treeRef.value?.store.nodesMap[key]
@@ -81,7 +83,7 @@ function handleContextMenu(
   }
 }
 
-function closeContextMenu() {
+function handleCloseContextMenu() {
   contextMenu.value.show = false
 }
 
@@ -129,6 +131,46 @@ const handleDrop = (event: Event<DragDropEvent>) => {
   })
 }
 
+// below is to keep the expansion state when tree node changes
+
+function handleNodeExpand(data: TreeNode, _node: Node, _component: any) {
+  // 保存当前展开的节点
+  let flag = false
+  defaultExpandIds.value.some((item) => {
+    if (item === data.key) {
+      // 判断当前节点是否存在， 存在不做处理
+      flag = true
+      return true
+    }
+  })
+  if (!flag) {
+    // 不存在则存到数组里
+    defaultExpandIds.value.push(data.key)
+  }
+}
+
+function handleNodeCollapse(data: TreeNode, _node: Node, _component: any) {
+  // 删除当前关闭的节点
+  defaultExpandIds.value.some((item, i) => {
+    if (item === data.key) {
+      defaultExpandIds.value.splice(i, 1)
+    }
+  })
+  removeChildrenIds(data) // recursively remove children ids
+}
+
+function removeChildrenIds(data: TreeNode) {
+  if (data.children) {
+    data.children.forEach(function (item) {
+      const index = defaultExpandIds.value.indexOf(item.key)
+      if (index > 0) {
+        defaultExpandIds.value.splice(index, 1)
+      }
+      removeChildrenIds(item)
+    })
+  }
+}
+
 onMounted(() => {
   const unlisten = getCurrentWebview().onDragDropEvent((event) => {
     if (['enter', 'over', 'leave'].includes(event.payload.type)) {
@@ -159,7 +201,7 @@ const propsName = {
     node-key="key"
     :expand-on-click-node="false"
     @node-click="(node) => emit('nodeClick', node)"
-    @current-change="(data, _node) => selected = data.key"
+    @current-change="(data, _node) => (selected = data.key)"
     @node-contextmenu="
       (event, data, node, component) => {
         handleContextMenu(event, data, node, component)
@@ -167,6 +209,9 @@ const propsName = {
       }
     "
     highlight-current
+    :default-expanded-keys="defaultExpandIds"
+    @node-expand="handleNodeExpand"
+    @node-collapse="handleNodeCollapse"
   >
     <template #default="{ data }">
       <div
@@ -180,7 +225,7 @@ const propsName = {
           class="mr-1"
           >{{ data.icon }}</v-icon
         >
-        <span>{{ data.label }}</span>
+        <span :class="{ 'label-dirty': data.dirty }">{{ data.label }}</span>
       </div>
     </template>
   </el-tree>
@@ -194,7 +239,7 @@ const propsName = {
     min-width="150px"
     close-on-click
     close-on-content-click
-    @update:model-value="closeContextMenu"
+    @update:model-value="handleCloseContextMenu"
   >
     <slot
       name="contextmenu"
@@ -223,5 +268,10 @@ const propsName = {
   letter-spacing: 0.0178571429em;
   font-family: 'Roboto', sans-serif;
   text-transform: none;
+}
+
+.label-dirty {
+  font-style: italic;
+  text-decoration: underline;
 }
 </style>

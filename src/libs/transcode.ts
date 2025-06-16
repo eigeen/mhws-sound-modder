@@ -20,20 +20,24 @@ export class Transcoder {
 
   /**
    * Transcodes the input file to target format.
+   * If outputPath provided, will ignore format parameter.
    * @returns The path of the transcoded file.
    */
   public async transcode(
     inputPath: string,
-    format: TargetFormat
+    format: TargetFormat,
+    outputPath?: string
   ): Promise<string> {
     // check if input file exists
     if (!(await exists(inputPath))) {
       throw new Error('Input file does not exist')
     }
     // assign output file path
-    const outputFilename = uuidv4() + '.' + format
-    const tempDir = await LocalDir.getTempDir()
-    const outputPath = await join(tempDir, outputFilename)
+    if (!outputPath) {
+      const outputFilename = uuidv4() + '.' + format
+      const tempDir = await LocalDir.getTempDir()
+      outputPath = await join(tempDir, outputFilename)
+    }
     // transcode the file
     await Transcode.autoTranscode(inputPath, outputPath)
     return outputPath
