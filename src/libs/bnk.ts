@@ -1,5 +1,5 @@
-import { bnkLoadFile } from '@/api/tauri'
-import { BnkData, Section } from '@/models/bnk'
+import { BnkApi } from '@/api/tauri'
+import { BnkData, DidxSection, Section } from '@/models/bnk'
 import {
   HircEntry,
   HircEventEntry,
@@ -25,7 +25,7 @@ export class Bnk {
   }
 
   public static async load(filePath: string): Promise<Bnk> {
-    const bnkData = await bnkLoadFile(filePath)
+    const bnkData = await BnkApi.loadFile(filePath)
     const bnk = new Bnk(bnkData)
     bnk.filePath = filePath
     bnk.name = getFileName(filePath)
@@ -47,6 +47,14 @@ export class Bnk {
     }
 
     return this.segmentTree
+  }
+
+  public getDidxSection(): DidxSection | null {
+    return this.data.sections.find((section) => section.type === 'Didx') ?? null
+  }
+
+  public async extractData(outputDir: string): Promise<void> {
+    return BnkApi.extractData(this.filePath, outputDir)
   }
 }
 

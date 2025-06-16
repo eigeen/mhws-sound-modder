@@ -44,6 +44,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             command::bnk_load_file,
             command::bnk_save_file,
+            command::bnk_extract_data,
             command::pck_load_header,
             command::get_exe_path,
             command::env_get_var,

@@ -73,7 +73,7 @@ impl VgmstreamCli {
             return false;
         };
 
-        result.status.success()
+        result.status.code() == Some(1)
     }
 
     pub fn auto_detect() -> Result<String> {

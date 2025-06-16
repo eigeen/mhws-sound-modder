@@ -1,13 +1,18 @@
 <script lang="ts" setup>
 import {
+  Bnk,
   HircNode,
   MusicSegmentNode,
   MusicTrackNode,
   PlayListItem,
 } from '@/libs/bnk'
+import { LocalDir } from '@/libs/localDir'
+import { Transcoder } from '@/libs/transcode'
 import { DataNode, useWorkspaceStore } from '@/stores/workspace'
 import { ShowError } from '@/utils/message'
-import { computed, ref, watch } from 'vue'
+import { convertFileSrc } from '@tauri-apps/api/core'
+import { join } from '@tauri-apps/api/path'
+import { computed, ref, watch, onUnmounted } from 'vue'
 
 const dataNode = defineModel<DataNode | null>({ required: true })
 
@@ -86,6 +91,12 @@ const rangeSliderValue = computed<number[]>({
     }
   },
 })
+
+// Audio player state
+const audioPlayer = ref<InstanceType<typeof HTMLAudioElement>>()
+const isPlaying = ref(false)
+const currentTime = ref(0)
+const duration = ref(0)
 
 function getTitle(node: HircNode | null) {
   if (node === null) {
@@ -179,6 +190,100 @@ function handleUndo() {
   } finally {
   }
 }
+
+async function extractBnk(wemId: number): Promise<void> {
+  // extract bnk
+  let targetBnkIndex = null
+  workspace.files.forEach((file, index) => {
+    if (file.type !== 'bnk') return
+    const didx = file.data.getDidxSection()
+    if (!didx) return
+    didx.entries.forEach((entry) => {
+      if (entry.id === wemId) {
+        targetBnkIndex = index
+      }
+    })
+  })
+  if (targetBnkIndex === null) {
+    throw new Error(`Failed to find target bnk containing Wem ${wemId}`)
+  }
+  // extract
+  const bnk = workspace.files[targetBnkIndex].data as unknown as Bnk
+  const outputDir = await join(await LocalDir.getTempDir(), 'extracted')
+  console.log(`bnk.data`, bnk.data)
+  await bnk.extractData(outputDir)
+  // store to looseFiles
+  const didx = bnk.getDidxSection()!
+  for (const entry of didx.entries) {
+    workspace.looseFiles[`extractWem:${entry.id}`] = await join(
+      outputDir,
+      `${entry.id}.wem`
+    )
+  }
+}
+
+/**
+ * Get playable audio file by id.
+ * @returns File path
+ */
+async function getPlaybackAudio(data: HircNode): Promise<string> {
+  try {
+    let fileKey = `playback:${data.id}`
+    if (workspace.looseFiles[fileKey]) {
+      return workspace.looseFiles[fileKey]
+    }
+
+    // not found, generate one
+    fileKey = `extractWem:${data.id}`
+    if (!workspace.looseFiles[fileKey]) {
+      await extractBnk(data.id)
+    }
+
+    const targetPath = await Transcoder.getInstance().transcode(
+      workspace.looseFiles[fileKey],
+      'wav'
+    )
+    workspace.looseFiles[fileKey] = targetPath
+    return targetPath
+  } catch (err) {
+    throw new Error(`Failed to get playback audio: ${err}`)
+  }
+}
+
+async function handlePlayback() {
+  if (
+    !data.value ||
+    data.value.type !== 'PlayListItem' ||
+    data.value.elementType !== 'Source'
+  ) {
+    return
+  }
+
+  try {
+    // Get audio file path
+    const audioPath = await getPlaybackAudio(data.value)
+
+    // Create new audio player if not exists
+    if (!audioPlayer.value) {
+      audioPlayer.value = new Audio(convertFileSrc(audioPath))
+      // Start playback immediately for first time
+      await audioPlayer.value.play()
+    } else {
+      // Just update src if already exists
+      audioPlayer.value.src = convertFileSrc(audioPath)
+    }
+  } catch (err) {
+    ShowError(`Failed to play audio: ${err}`)
+  }
+}
+
+// Clean up audio player on unmount
+onUnmounted(() => {
+  if (audioPlayer.value) {
+    audioPlayer.value.pause()
+    audioPlayer.value = undefined
+  }
+})
 </script>
 
 <template>
@@ -234,6 +339,7 @@ function handleUndo() {
           </v-list-item>
         </v-list>
       </div>
+
       <div v-if="listItemSelected">
         <div class="track-editor">
           <!-- column 1 -->
@@ -278,7 +384,47 @@ function handleUndo() {
     </div>
 
     <div v-if="data?.type === 'PlayListItem'">
-      <!--  -->
+      <div>
+        <v-btn
+          class="text-none"
+          prepend-icon="mdi-play"
+          variant="outlined"
+          @click="handlePlayback"
+          >Playback</v-btn
+        >
+      </div>
+      <div v-if="dataNode?.dirty">
+        <v-btn
+          class="text-none"
+          prepend-icon="mdi-play"
+          variant="outlined"
+          >Play Original</v-btn
+        >
+      </div>
+      <audio
+        v-if="audioPlayer"
+        ref="audioElement"
+        :src="audioPlayer.src"
+        controls
+        @timeupdate="
+          (event) => {
+            currentTime = (event.target as HTMLAudioElement).currentTime
+          }
+        "
+        @durationchange="
+          (event) => {
+            duration = (event.target as HTMLAudioElement).duration
+          }
+        "
+        @play="isPlaying = true"
+        @pause="isPlaying = false"
+        @ended="
+          () => {
+            isPlaying = false
+            currentTime = 0
+          }
+        "
+      ></audio>
     </div>
 
     <div

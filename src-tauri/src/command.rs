@@ -1,3 +1,6 @@
+use std::{fs::File, io::Write, path::Path};
+
+use re_sound::bnk::SectionPayload;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -16,7 +19,7 @@ pub fn bnk_load_file(
     section_filter: Option<Vec<u32>>,
 ) -> Result<re_sound::bnk::Bnk, String> {
     map_result(|| {
-        let file = std::fs::File::open(path)?;
+        let file = File::open(path)?;
         let mut reader = std::io::BufReader::new(file);
         let mut bnk = re_sound::bnk::Bnk::from_reader(&mut reader)?;
         // use filter to remove sections
@@ -41,9 +44,52 @@ pub fn bnk_load_file(
 #[tauri::command]
 pub fn bnk_save_file(path: &str, mut bnk: re_sound::bnk::Bnk) -> Result<(), String> {
     map_result(|| {
-        let file = std::fs::File::create(path)?;
+        let file = File::create(path)?;
         let mut writer = std::io::BufWriter::new(file);
         bnk.write_to(&mut writer)?;
+
+        Ok(())
+    })
+}
+
+/// Extract all Wem data from specified Bnk file to target_path.
+#[tauri::command]
+pub fn bnk_extract_data(path: &str, target_path: &str) -> Result<(), String> {
+    map_result(|| {
+        let file = std::fs::File::open(path)?;
+        let mut reader = std::io::BufReader::new(file);
+        let bnk = re_sound::bnk::Bnk::from_reader(&mut reader)?;
+
+        let target_path = Path::new(target_path);
+        if !target_path.exists() {
+            std::fs::create_dir_all(target_path)?;
+        }
+
+        // get all data
+        let mut wem_ids = vec![];
+        let mut data = None;
+        for section in bnk.sections.iter() {
+            match &section.payload {
+                SectionPayload::Didx { entries } => {
+                    wem_ids.extend(entries.iter().map(|e| e.id));
+                }
+                SectionPayload::Data { data_list } => data = Some(data_list),
+                _ => {}
+            }
+        }
+        let Some(data) = data else {
+            eyre::bail!("No data found in Bnk file. This Bnk may not contains actual sound data.");
+        };
+        if wem_ids.len() != data.len() {
+            eyre::bail!("Number of Wem IDs and data entries do not match.");
+        }
+
+        // save all data
+        for (id, data) in wem_ids.iter().zip(data.iter()) {
+            let file_path = target_path.join(format!("{}.wem", id));
+            let mut file = File::create(&file_path)?;
+            file.write_all(data)?;
+        }
 
         Ok(())
     })
