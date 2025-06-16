@@ -2067,6 +2067,7 @@ name = "mhws-sound-modder"
 version = "0.1.0"
 dependencies = [
  "eyre",
+ "indexmap 2.9.0",
  "log",
  "parking_lot",
  "re-sound",

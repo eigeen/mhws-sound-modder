@@ -46,6 +46,8 @@ pub fn run() {
             command::bnk_save_file,
             command::bnk_extract_data,
             command::pck_load_header,
+            command::pck_extract_data,
+            command::pck_save_file,
             command::get_exe_path,
             command::env_get_var,
             command::transcode_set_paths,

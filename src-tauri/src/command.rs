@@ -1,5 +1,11 @@
-use std::{fs::File, io::Write, path::Path};
+use std::{
+    fs::{self, File},
+    io::{self, Write},
+    path::Path,
+};
 
+use eyre::Context;
+use indexmap::IndexMap;
 use re_sound::bnk::SectionPayload;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -98,11 +104,120 @@ pub fn bnk_extract_data(path: &str, target_path: &str) -> Result<(), String> {
 #[tauri::command]
 pub fn pck_load_header(path: &str) -> Result<re_sound::pck::PckHeader, String> {
     map_result(|| {
-        let file = std::fs::File::open(path)?;
-        let mut reader = std::io::BufReader::new(file);
+        let file = File::open(path)?;
+        let mut reader = io::BufReader::new(file);
 
         Ok(re_sound::pck::PckHeader::from_reader(&mut reader)?)
     })
+}
+
+#[tauri::command]
+pub fn pck_extract_data(path: &str, target_path: &str) -> Result<(), String> {
+    map_result(|| {
+        let target_path = Path::new(target_path);
+        let file = File::open(path)?;
+        let mut reader = io::BufReader::new(file);
+        let pck = re_sound::pck::PckHeader::from_reader(&mut reader)?;
+
+        let target_path = Path::new(target_path);
+        if !target_path.exists() {
+            std::fs::create_dir_all(target_path)?;
+        }
+
+        for i in 0..pck.wem_entries.len() {
+            let entry = &pck.wem_entries[i];
+            let file_name = format!("{}.wem", entry.id);
+            let file_path = target_path.join(file_name);
+            let mut file = File::create(&file_path)
+                .context("Failed to create wem output file")
+                .context(format!("Path: {}", file_path.display()))?;
+
+            let mut wem_reader = pck.wem_reader(&mut reader, i).unwrap();
+            io::copy(&mut wem_reader, &mut file).context("Failed to write wem data to file")?;
+        }
+
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn pck_save_file(
+    mut header: re_sound::pck::PckHeader,
+    src_wem_path: &str,
+    dst_path: &str,
+) -> Result<(), String> {
+    let result = map_result(|| {
+        let src_wem_path = Path::new(src_wem_path);
+        if !src_wem_path.exists() {
+            eyre::bail!("Source Wem dir not found.");
+        }
+
+        // collect wem files
+        struct WemMetadata {
+            id: u32,
+            file_size: u32,
+            file_path: Option<String>,
+            data: Option<Vec<u8>>,
+        }
+        let mut wem_metadata_map = IndexMap::new();
+        for entry in fs::read_dir(src_wem_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() || path.extension().unwrap_or_default() != "wem" {
+                continue;
+            }
+
+            // 解析wem文件名
+            let file_stem = path.file_stem().unwrap().to_string_lossy();
+            let id: u32 = file_stem.parse()?;
+            wem_metadata_map.insert(
+                id,
+                WemMetadata {
+                    id,
+                    file_size: path.metadata()?.len() as u32,
+                    file_path: Some(path.to_string_lossy().to_string()),
+                    data: None,
+                },
+            );
+        }
+
+        // update header with new wem entries
+        let mut offset = header.get_wem_offset_start();
+        for entry in header.wem_entries.iter_mut() {
+            let metadata = wem_metadata_map.get(&entry.id).unwrap();
+            entry.offset = offset;
+            entry.length = metadata.file_size;
+            offset += metadata.file_size;
+        }
+
+        let file = File::create(dst_path)?;
+        let mut writer = io::BufWriter::new(file);
+        // write header
+        header.write_to(&mut writer)?;
+
+        // write wem data
+        for metadata in wem_metadata_map.values() {
+            if let Some(data) = &metadata.data {
+                writer.write_all(data)?;
+            } else if let Some(file_path) = &metadata.file_path {
+                let mut input_file = File::open(file_path)?;
+                io::copy(&mut input_file, &mut writer)?;
+            } else {
+                eyre::bail!(
+                    "Internal: both data and file_path are None for Wem file: {}",
+                    metadata.id
+                );
+            }
+        }
+
+        Ok(())
+    });
+    if result.is_err() {
+        // clean up if failed
+        std::fs::remove_file(dst_path).ok();
+    }
+
+    result
 }
 
 #[tauri::command]

@@ -1,4 +1,5 @@
 import { BnkData } from '@/models/bnk'
+import { PckHeader } from '@/models/pck'
 import { stringToU32LE } from '@/utils'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -23,6 +24,31 @@ export class BnkApi {
     targetPath: string
   ): Promise<void> {
     return invoke('bnk_extract_data', { path, targetPath })
+  }
+
+  public static async saveFile(path: string, bnk: BnkData): Promise<void> {
+    return invoke('bnk_save_file', { path, bnk })
+  }
+}
+
+export class PckApi {
+  public static async loadHeader(path: string): Promise<PckHeader> {
+    return invoke('pck_load_header', { path })
+  }
+
+  public static async extractData(
+    path: string,
+    targetPath: string
+  ): Promise<void> {
+    return invoke('pck_extract_data', { path, targetPath })
+  }
+
+  public static async saveFile(
+    header: PckHeader,
+    srcWemPath: string,
+    dstPath: string
+  ): Promise<void> {
+    return invoke('pck_save_file', { header, srcWemPath, dstPath })
   }
 }
 
