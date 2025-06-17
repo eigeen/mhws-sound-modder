@@ -2,6 +2,9 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { Bnk } from './bnk'
 import { Pck } from './pck'
 import { reactive, Reactive } from 'vue'
+import { LocalDir } from './localDir'
+import { join } from '@tauri-apps/api/path'
+import { exists } from '@tauri-apps/plugin-fs'
 
 export type SourceInfo = ISourceInfo<Bnk> | ISourceInfo<Pck>
 
@@ -37,15 +40,23 @@ export class SourceManager {
     this.sources[sourceInfo.id].push(sourceInfo)
 
     if (this.sources[sourceInfo.id].length > 1) {
+      // remove duplicates
+      const index = this.sources[sourceInfo.id].findIndex(
+        (item) => item.filePath === sourceInfo.filePath
+      )
+      if (index !== -1) {
+        this.sources[sourceInfo.id].splice(index, 1)
+      }
       // sort
       this.sortSources(this.sources[sourceInfo.id])
     }
   }
 
   public clearSources() {
-    for (const key in this.sources) {
+    console.debug('clear sources')
+    Object.keys(this.sources).forEach((key) => {
       delete this.sources[key]
-    }
+    })
   }
 
   public getSource(id: number | string): SourceInfo | null {
@@ -58,6 +69,58 @@ export class SourceManager {
 
   public getSources(id: number | string): SourceInfo[] {
     return this.sources[id] || []
+  }
+
+  /**
+   * Get source Wem file path.
+   */
+  public async getSourceFilePath(id: number | string): Promise<string | null> {
+    const source = this.getSource(id)
+    if (!source) return null
+
+    const tempDir = await LocalDir.getTempDir()
+    let label = ''
+    let expectPath = ''
+    switch (source.fromType) {
+      case 'bnk':
+        const bnk = source.from
+        label = bnk.getLabel()
+        expectPath = await join(tempDir, label, `${id}.wem`)
+        if (await exists(expectPath)) {
+          return expectPath
+        }
+        // not found, try extract
+        const outputDir = await join(tempDir, label)
+        await bnk.extractData(outputDir)
+        // check again
+        if (!(await exists(expectPath))) {
+          throw new Error(
+            `Source ${id} not found in ${bnk.filePath} after extract.`
+          )
+        }
+        return expectPath
+        break
+      case 'pck':
+        const pck = source.from
+        label = pck.getLabel()
+        expectPath = await join(tempDir, label, `${id}.wem`)
+        if (await exists(expectPath)) {
+          return expectPath
+        }
+        // not found, try extract
+        const pckDir = await join(tempDir, label)
+        await pck.extractData(pckDir)
+        // check again
+        if (!(await exists(expectPath))) {
+          throw new Error(
+            `Source ${id} not found in ${pck.filePath} after extract.`
+          )
+        }
+        return expectPath
+        break
+    }
+
+    return null
   }
 
   /**

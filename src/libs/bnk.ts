@@ -8,6 +8,7 @@ import {
   HircMusicTrackEntry,
   HircSoundEntry,
 } from '@/models/bnk/hirc'
+import { sha256 } from '@/utils'
 import { getFileName } from '@/utils/path'
 import { reactive, Reactive, ref, toRef } from 'vue'
 
@@ -15,6 +16,7 @@ export class Bnk {
   public data: BnkData
   public name: string = ''
   public filePath: string = ''
+  private _label: string = ''
   private segmentTree: SegmentTree | null = null
 
   constructor(data: BnkData) {
@@ -26,6 +28,7 @@ export class Bnk {
     const bnk = new Bnk(bnkData)
     bnk.filePath = filePath
     bnk.name = getFileName(filePath)
+    bnk._label = (await sha256(filePath)).substring(0, 8)
     return bnk
   }
 
@@ -34,7 +37,7 @@ export class Bnk {
   }
 
   public getLabel(): string {
-    return getFileName(this.filePath)
+    return this._label
   }
 
   public visit(visitor: BnkVisitor): void {
@@ -74,7 +77,6 @@ export class SegmentTree {
     const visitor = new MusicSegmentVisitor()
     bnk.visit(visitor)
     this.nodes = visitor.musicSegments
-    console.log('segment tree 1', this.nodes[0])
   }
 }
 
@@ -97,10 +99,15 @@ export interface PlayListItem {
   type: 'PlayListItem'
   elementType: 'Track' | 'Source' | 'Event'
   /**
+   * An unique ID, avoid duplicate
+   * TrackID-ElementID
+   */
+  id: string
+  /**
    * When type is 'Source' or 'Event', it's the element id.
    * When type is 'Track', it's the track node id
    */
-  id: number
+  element_id: number
   // available when type is 'Track'
   element?: MusicTrackNode
   playAt: Reactive<number>
@@ -191,7 +198,8 @@ class MusicSegmentVisitor extends BnkVisitor {
           return reactive({
             type: 'PlayListItem',
             elementType: 'Event',
-            id: item.event_id,
+            id: `${entry.id}-${item.event_id}`,
+            element_id: item.event_id,
             element: null,
             playAt: toRef(item, 'play_at'),
             beginTrimOffset: toRef(item, 'begin_trim_offset'),
@@ -202,7 +210,8 @@ class MusicSegmentVisitor extends BnkVisitor {
           return reactive({
             type: 'PlayListItem',
             elementType: 'Source',
-            id: item.source_id,
+            id: `${entry.id}-${item.source_id}`,
+            element_id: item.source_id,
             element: null,
             playAt: toRef(item, 'play_at'),
             beginTrimOffset: toRef(item, 'begin_trim_offset'),
@@ -215,7 +224,8 @@ class MusicSegmentVisitor extends BnkVisitor {
             return reactive({
               type: 'PlayListItem',
               elementType: 'Track',
-              id: item.track_id,
+              id: `${entry.id}-${item.track_id}`,
+              element_id: item.track_id,
               element: track,
               playAt: toRef(item, 'play_at'),
               beginTrimOffset: toRef(item, 'begin_trim_offset'),

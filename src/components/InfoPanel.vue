@@ -7,11 +7,13 @@ import {
   PlayListItem,
 } from '@/libs/bnk'
 import { LocalDir } from '@/libs/localDir'
+import { SourceManager } from '@/libs/source'
 import { Transcoder } from '@/libs/transcode'
 import { DataNode, useWorkspaceStore } from '@/stores/workspace'
 import { ShowError } from '@/utils/message'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { join } from '@tauri-apps/api/path'
+import { exists, rename } from '@tauri-apps/plugin-fs'
 import { computed, ref, watch, onUnmounted } from 'vue'
 
 const dataNode = defineModel<DataNode | null>({ required: true })
@@ -21,6 +23,7 @@ const data = computed<HircNode | null>(() => {
 })
 
 const workspace = useWorkspaceStore()
+const sourceManager = SourceManager.getInstance()
 
 let ignoreNextChange = false
 
@@ -110,11 +113,11 @@ function getTitle(node: HircNode | null) {
     case 'PlayListItem':
       switch (node.elementType) {
         case 'Track':
-          return `Track ${node.id}`
+          return `Track ${node.element_id}`
         case 'Source':
-          return `Audio ${node.id}.wem`
+          return `Audio ${node.element_id}.wem`
         case 'Event':
-          return `Event ${node.id}`
+          return `Event ${node.element_id}`
         default:
           return ''
       }
@@ -127,11 +130,11 @@ function getPlayListItemTitle(item: PlayListItem | null) {
   if (item === null) return ''
   switch (item.elementType) {
     case 'Track':
-      return `Track ${item.id}`
+      return `Track ${item.element_id}`
     case 'Source':
-      return `Audio ${item.id}`
+      return `Audio ${item.element_id}`
     case 'Event':
-      return `Event ${item.id}`
+      return `Event ${item.element_id}`
     default:
       return ''
   }
@@ -175,7 +178,7 @@ function handleUndo() {
         break
       case 'PlayListItem':
         // remove replace item
-        delete workspace.replaceList[data.value.id]
+        delete workspace.replaceList[data.value.element_id]
         break
     }
     // restore status
@@ -191,59 +194,30 @@ function handleUndo() {
   }
 }
 
-async function extractBnk(wemId: number): Promise<void> {
-  // extract bnk
-  let targetBnkIndex = null
-  workspace.files.forEach((file, index) => {
-    if (file.type !== 'bnk') return
-    const didx = file.data.getDidxSection()
-    if (!didx) return
-    didx.entries.forEach((entry) => {
-      if (entry.id === wemId) {
-        targetBnkIndex = index
-      }
-    })
-  })
-  if (targetBnkIndex === null) {
-    throw new Error(`Failed to find target bnk containing Wem ${wemId}`)
-  }
-  // extract
-  const bnk = workspace.files[targetBnkIndex].data as unknown as Bnk
-  const outputDir = await join(await LocalDir.getTempDir(), 'extracted')
-  await bnk.extractData(outputDir)
-  // store to looseFiles
-  const didx = bnk.getDidxSection()!
-  for (const entry of didx.entries) {
-    workspace.looseFiles[`extractWem:${entry.id}`] = await join(
-      outputDir,
-      `${entry.id}.wem`
-    )
-  }
-}
-
 /**
  * Get playable audio file by id.
  * @returns File path
  */
-async function getPlaybackAudio(data: HircNode): Promise<string> {
+async function getPlaybackAudio(data: PlayListItem): Promise<string> {
   try {
-    let fileKey = `playback:${data.id}`
-    if (workspace.looseFiles[fileKey]) {
-      return workspace.looseFiles[fileKey]
+    const sourceId = data.element_id
+    const wemFilePath = await sourceManager.getSourceFilePath(sourceId)
+    if (!wemFilePath) {
+      throw new Error('source ID not found in SourceManager.')
     }
 
-    // not found, generate one
-    fileKey = `extractWem:${data.id}`
-    if (!workspace.looseFiles[fileKey]) {
-      await extractBnk(data.id)
+    const wavFilePath = wemFilePath.replace('.wem', '.wav')
+    if (await exists(wavFilePath)) {
+      return wavFilePath
     }
 
+    // wav not found, transcode
     const targetPath = await Transcoder.getInstance().transcode(
-      workspace.looseFiles[fileKey],
+      wemFilePath,
       'wav'
     )
-    workspace.looseFiles[fileKey] = targetPath
-    return targetPath
+    await rename(targetPath, wavFilePath)
+    return wavFilePath
   } catch (err) {
     throw new Error(`Failed to get playback audio: ${err}`)
   }

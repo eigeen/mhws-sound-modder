@@ -9,8 +9,11 @@ import { SearchResult, SearchSource } from '@/components/Toolbar.vue'
 import { BnkFile, DataNode, useWorkspaceStore } from '@/stores/workspace'
 import { getExtension } from '@/utils/path'
 import { Transcoder } from '@/libs/transcode'
+import { SourceManager } from '@/libs/source'
+import { writeText as writeTextToClipboard } from '@tauri-apps/plugin-clipboard-manager'
 
 const workspace = useWorkspaceStore()
+const sourceManager = SourceManager.getInstance()
 
 const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
 const splitPanel = reactive({
@@ -25,7 +28,7 @@ const selectedDataNode = computed<DataNode | null>(() => {
 
   const targetNode = workspace.flattenNodeMap[workspace.selectedKey]
   if (!targetNode) {
-    console.info('Selected key not found in flattenEntryMap')
+    console.info('Selected key not found in flatten map:', workspace.selectedKey)
     return null
   }
   return targetNode
@@ -68,7 +71,7 @@ const workspaceVisualTree = computed(() => {
                       .map((item) => {
                         if (item.elementType === 'Source') {
                           return {
-                            label: `${item.id}.wem`,
+                            label: `${item.element_id}.wem`,
                             key: item.id,
                             icon: 'mdi-file-music',
                             dirty: getDirtyRef(item.id),
@@ -162,38 +165,44 @@ function handleSearchFocus(
 }
 
 async function handleOpenFileDialog() {
-  const selected =
-    (await openDialog({
-      multiple: true,
-      filters: [
-        {
-          name: 'All Files',
-          extensions: ['*'],
-        },
-        {
-          name: 'Sound Bank',
-          extensions: ['bnk', 'sbnk', 'sbnk.X64'],
-        },
-        {
-          name: 'Sound Pack',
-          extensions: ['pck', 'pck.X64'],
-        },
-      ],
-    })) ?? []
-  console.log('Selected files:', selected)
+  try {
+    const selected =
+      (await openDialog({
+        multiple: true,
+        filters: [
+          {
+            name: 'All Files',
+            extensions: ['*'],
+          },
+          {
+            name: 'Sound Bank',
+            extensions: ['bnk', 'sbnk', 'sbnk.X64'],
+          },
+          {
+            name: 'Sound Pack',
+            extensions: ['pck', 'pck.X64'],
+          },
+        ],
+      })) ?? []
+    console.info('Selected files:', selected)
 
-  for (const filePath of selected) {
-    if (workspace.files.some((file) => file.data.filePath === filePath)) {
-      ShowInfo(`File already opened: ${filePath}`)
-      continue
-    }
+    for (const filePath of selected) {
+      if (workspace.files.some((file) => file.data.filePath === filePath)) {
+        ShowInfo(`File already opened: ${filePath}`)
+        continue
+      }
 
-    const bnk = await Bnk.load(filePath)
-    const file: BnkFile = {
-      type: 'bnk',
-      data: bnk,
+      const bnk = await Bnk.load(filePath)
+      const file: BnkFile = {
+        type: 'bnk',
+        data: bnk,
+      }
+      workspace.files.push(file)
     }
-    workspace.files.push(file)
+  } catch (err) {
+    ShowError(
+      `Failed to open file: ${err}.Is your file is a valid Sound Bank or Sound Pack?`
+    )
   }
 }
 
@@ -269,6 +278,12 @@ async function handleDrop(event: DropEvent) {
         break
     }
   }
+}
+
+function handleDeleteNode(data: TreeNode) {
+  console.debug('handleDeleteNode', data)
+  const filePath = data.key as string
+  workspace.removeFile(filePath)
 }
 
 const menuItems = [
@@ -401,22 +416,23 @@ const menuItems = [
 
                 <template v-else>
                   <v-list-item
-                    value="rename"
-                    title="重命名"
-                    @click="console.log('Rename', props.data)"
+                    value="copy-id"
+                    @click="
+                      writeTextToClipboard(props.data?.key.toString() ?? '')
+                    "
                   >
                     <template v-slot:title>
-                      <v-icon class="mr-2">mdi-rename-box</v-icon>
-                      <span>重命名</span>
+                      <v-icon class="mr-2">mdi-content-copy</v-icon>
+                      <span>Copy ID</span>
                     </template>
                   </v-list-item>
                   <v-list-item
-                    value="delete"
-                    @click="console.log('Delete', props.data)"
+                    value="close"
+                    @click="handleDeleteNode(props.data!)"
                   >
                     <template v-slot:title>
                       <v-icon class="mr-2">mdi-delete</v-icon>
-                      <span>删除</span>
+                      <span>Close</span>
                     </template>
                   </v-list-item>
                 </template>

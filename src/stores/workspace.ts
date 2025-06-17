@@ -14,8 +14,8 @@ import {
   watch,
 } from 'vue'
 
-export type WorkspaceFile = BnkFile | PckFile
-export type FlattenNodeMap = { [key: string]: DataNode }
+type FlattenNodeMap = { [key: string]: DataNode }
+type WorkspaceFile = BnkFile | PckFile
 
 interface File<T> {
   type: 'bnk' | 'pck'
@@ -76,13 +76,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const flattenNodeMap = ref<FlattenNodeMap>({})
   // Replace list, to replace audio data
   const replaceList = ref<Record<string | number, ReplaceItem>>({})
-  // Loose files in local dir
-  const looseFiles = ref<Record<string, string>>({})
 
   // Shallow watch files changes
   watch(
     files.value,
     () => {
+      console.debug('files changed')
       // update flatten map and source wems
       const sourceManager = SourceManager.getInstance()
       sourceManager.clearSources()
@@ -93,30 +92,33 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           const flatten: FlattenNodeMap = {}
 
           function iterNode(node: HircNode, parent: DataNode | null) {
-            if (node.type === 'PlayListItem') {
-              if (node.elementType === 'Source') {
-                sourceManager.addSource({
-                  id: node.id,
-                  fromType: 'bnk',
-                  from: file.data as Bnk,
-                  dirty: computed(() => {
-                    const replaceItem = replaceList.value[node.id]
-                    return replaceItem !== undefined
-                  }) as unknown as boolean,
-                })
-                return
-              } else {
-                // ignore non-source nodes
-                return
-              }
-            }
-
             const dataNode = reactive({
               data: node,
               defaultData: shallowUnref(node),
               parent: parent ?? null,
               dirty: false,
             })
+            if (node.type === 'PlayListItem') {
+              if (node.elementType === 'Source') {
+                // dirty flag for source is computed
+                const dirty = computed(() => {
+                  const replaceItem = replaceList.value[node.element_id]
+                  return replaceItem !== undefined
+                }) as unknown as boolean
+                dataNode.dirty = dirty
+                // sync source
+                sourceManager.addSource({
+                  id: node.element_id,
+                  fromType: 'bnk',
+                  from: file.data as Bnk,
+                  dirty,
+                })
+              } else {
+                // ignore non-source nodes
+                return
+              }
+            }
+
             flatten[node.id] = dataNode
             // iterate children
             if (node.type === 'MusicSegment') {
@@ -161,11 +163,22 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     { deep: false }
   )
 
+  const removeFile = (filePath: string): boolean => {
+    const index = files.value.findIndex(
+      (file) => file.data.filePath === filePath
+    )
+    if (index !== -1) {
+      files.value.splice(index, 1)
+      return true
+    }
+    return false
+  }
+
   return {
     files,
     selectedKey,
     flattenNodeMap,
     replaceList,
-    looseFiles,
+    removeFile,
   }
 })
