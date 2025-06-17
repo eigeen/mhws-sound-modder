@@ -1,5 +1,6 @@
 import { Bnk, HircNode } from '@/libs/bnk'
 import { Pck } from '@/libs/pck'
+import { SourceManager } from '@/libs/source'
 import { defineStore } from 'pinia'
 import {
   computed,
@@ -26,7 +27,6 @@ export interface BnkFile extends File<Bnk> {
 }
 
 export interface PckFile extends File<Pck> {
-  // TODO
   type: 'pck'
 }
 
@@ -72,7 +72,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const files = ref<WorkspaceFile[]>([])
   // Selected key of nodes
   const selectedKey = ref<string | number | null>(null)
-  // Flatten entry map of all nodes in the files
+  // Flatten map of all nodes in the files
   const flattenNodeMap = ref<FlattenNodeMap>({})
   // Replace list, to replace audio data
   const replaceList = ref<Record<string | number, ReplaceItem>>({})
@@ -83,27 +83,40 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   watch(
     files.value,
     () => {
-      // update flatten entry map
-      let entries: FlattenNodeMap = {}
+      // update flatten map and source wems
+      const sourceManager = SourceManager.getInstance()
+      sourceManager.clearSources()
+
+      const entries: FlattenNodeMap = {}
       files.value.forEach((file) => {
         if (file.type === 'bnk') {
           const flatten: FlattenNodeMap = {}
 
           function iterNode(node: HircNode, parent: DataNode | null) {
+            if (node.type === 'PlayListItem') {
+              if (node.elementType === 'Source') {
+                sourceManager.addSource({
+                  id: node.id,
+                  fromType: 'bnk',
+                  from: file.data as Bnk,
+                  dirty: computed(() => {
+                    const replaceItem = replaceList.value[node.id]
+                    return replaceItem !== undefined
+                  }) as unknown as boolean,
+                })
+                return
+              } else {
+                // ignore non-source nodes
+                return
+              }
+            }
+
             const dataNode = reactive({
               data: node,
               defaultData: shallowUnref(node),
               parent: parent ?? null,
               dirty: false,
             })
-            if (node.type === 'PlayListItem' && node.elementType === 'Source') {
-              // audio dirty flag is computed
-              dataNode.dirty = computed(() => {
-                const replaceItem = replaceList.value[node.id]
-                return replaceItem !== undefined
-              }) as unknown as boolean
-            }
-
             flatten[node.id] = dataNode
             // iterate children
             if (node.type === 'MusicSegment') {
@@ -116,6 +129,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
               })
             }
           }
+
           // iterate all nodes
           const segmentTree = file.data.getSegmentTree()
           segmentTree.nodes.forEach((node) => {
@@ -125,10 +139,24 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           Object.entries(flatten).forEach(([key, value]) => {
             entries[key] = value
           })
+        } else if (file.type === 'pck') {
+          if (file.data.hasData()) {
+            file.data.header.wem_entries.forEach((entry) => {
+              sourceManager.addSource({
+                id: entry.id,
+                fromType: 'pck',
+                from: file.data as Pck,
+                dirty: computed(() => {
+                  const replaceItem = replaceList.value[entry.id]
+                  return replaceItem !== undefined
+                }) as unknown as boolean,
+              })
+            })
+          }
         }
       })
       flattenNodeMap.value = entries
-      console.debug('flatten entry map updated')
+      console.debug('flatten map updated')
     },
     { deep: false }
   )
@@ -138,6 +166,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     selectedKey,
     flattenNodeMap,
     replaceList,
-    looseFiles
+    looseFiles,
   }
 })

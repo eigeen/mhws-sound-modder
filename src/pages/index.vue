@@ -207,7 +207,7 @@ const AUDIO_EXTS: Record<string, boolean> = {
 }
 
 async function handleDrop(event: DropEvent) {
-  console.log('handleDrop event', event)
+  console.debug('handleDrop event', event)
   const { key, paths } = event
   const node = workspace.flattenNodeMap[key]
   if (!node) {

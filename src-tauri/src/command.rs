@@ -107,13 +107,23 @@ pub fn bnk_extract_data(path: &str, target_path: &str) -> Result<(), String> {
     })
 }
 
-#[tauri::command]
-pub fn pck_load_header(path: &str) -> Result<re_sound::pck::PckHeader, String> {
-    map_result(|| {
-        let file = File::open(path)?;
-        let mut reader = io::BufReader::new(file);
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PckBasicData {
+    header: re_sound::pck::PckHeader,
+    has_data: bool,
+}
 
-        Ok(re_sound::pck::PckHeader::from_reader(&mut reader)?)
+#[tauri::command]
+pub fn pck_load_basic_data(path: &str) -> Result<PckBasicData, String> {
+    map_result(|| {
+        let mut pck = re_sound::pck::Pck::from_file(path)?;
+        let has_data = pck.has_data();
+
+        Ok(PckBasicData {
+            header: pck.header().clone(),
+            has_data,
+        })
     })
 }
 

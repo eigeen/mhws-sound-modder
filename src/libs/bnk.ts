@@ -10,14 +10,11 @@ import {
 } from '@/models/bnk/hirc'
 import { getFileName } from '@/utils/path'
 import { reactive, Reactive, ref, toRef } from 'vue'
-import { Pck } from './pck'
 
 export class Bnk {
   public data: BnkData
   public name: string = ''
   public filePath: string = ''
-  private relatedBnk: Bnk[] = []
-  private relatedPck: Pck[] = []
   private segmentTree: SegmentTree | null = null
 
   constructor(data: BnkData) {
@@ -32,6 +29,14 @@ export class Bnk {
     return bnk
   }
 
+  public hasSection(ty: 'Bkhd' | 'Didx' | 'Hirc' | 'Data'): boolean {
+    return this.data.sections.some((section) => section.type === ty)
+  }
+
+  public getLabel(): string {
+    return getFileName(this.filePath)
+  }
+
   public visit(visitor: BnkVisitor): void {
     visitor.visitBnk(this)
   }
@@ -43,7 +48,6 @@ export class Bnk {
   public getSegmentTree(): SegmentTree {
     if (!this.segmentTree) {
       this.segmentTree = new SegmentTree(this)
-      console.log('segment tree 2', this.segmentTree.nodes[0])
     }
 
     return this.segmentTree

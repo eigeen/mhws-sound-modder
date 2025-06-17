@@ -33,7 +33,7 @@ watch(
     }
     // if id changed, user may changed the selected node
     if (oldVal?.id !== newVal?.id) {
-      console.log('Selected node changed', dataNode.value)
+      console.debug('Selected node changed', dataNode.value)
       if (data.value?.type === 'MusicTrack') {
         listSelected.value = [data.value.playlist[0]]
       }
@@ -210,7 +210,6 @@ async function extractBnk(wemId: number): Promise<void> {
   // extract
   const bnk = workspace.files[targetBnkIndex].data as unknown as Bnk
   const outputDir = await join(await LocalDir.getTempDir(), 'extracted')
-  console.log(`bnk.data`, bnk.data)
   await bnk.extractData(outputDir)
   // store to looseFiles
   const didx = bnk.getDidxSection()!

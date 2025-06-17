@@ -31,9 +31,14 @@ export class BnkApi {
   }
 }
 
+export interface PckBasicData {
+  header: PckHeader
+  hasData: boolean
+}
+
 export class PckApi {
-  public static async loadHeader(path: string): Promise<PckHeader> {
-    return invoke('pck_load_header', { path })
+  public static async loadBasicData(path: string): Promise<PckBasicData> {
+    return invoke('pck_load_basic_data', { path })
   }
 
   public static async extractData(
