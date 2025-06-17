@@ -31,13 +31,19 @@ pub fn bnk_load_file(
         // use filter to remove sections
         if let Some(filter) = section_filter {
             let mut remove_indexes = vec![];
-            for (i, section) in bnk.sections.iter().enumerate() {
+            for (i, section) in bnk.sections.iter_mut().enumerate() {
                 let sec_magic_number = u32::from_le_bytes(section.magic);
                 if filter.iter().all(|&f| sec_magic_number != f) {
-                    remove_indexes.push(i);
+                    // Data: only clear content, keep section header
+                    if let SectionPayload::Data { data_list } = &mut section.payload {
+                        data_list.clear();
+                    } else {
+                        remove_indexes.push(i);
+                    }
                 }
             }
 
+            // remove sections
             for i in remove_indexes.iter().rev() {
                 bnk.sections.remove(*i);
             }
@@ -115,24 +121,22 @@ pub fn pck_load_header(path: &str) -> Result<re_sound::pck::PckHeader, String> {
 pub fn pck_extract_data(path: &str, target_path: &str) -> Result<(), String> {
     map_result(|| {
         let target_path = Path::new(target_path);
-        let file = File::open(path)?;
-        let mut reader = io::BufReader::new(file);
-        let pck = re_sound::pck::PckHeader::from_reader(&mut reader)?;
+        let mut pck = re_sound::pck::Pck::from_file(path)?;
 
         let target_path = Path::new(target_path);
         if !target_path.exists() {
             std::fs::create_dir_all(target_path)?;
         }
 
-        for i in 0..pck.wem_entries.len() {
-            let entry = &pck.wem_entries[i];
+        for i in 0..pck.header().wem_entries.len() {
+            let entry = &pck.header().wem_entries[i];
             let file_name = format!("{}.wem", entry.id);
             let file_path = target_path.join(file_name);
             let mut file = File::create(&file_path)
                 .context("Failed to create wem output file")
                 .context(format!("Path: {}", file_path.display()))?;
 
-            let mut wem_reader = pck.wem_reader(&mut reader, i).unwrap();
+            let mut wem_reader = pck.wem_reader(i).unwrap();
             io::copy(&mut wem_reader, &mut file).context("Failed to write wem data to file")?;
         }
 
