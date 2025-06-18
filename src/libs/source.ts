@@ -12,7 +12,6 @@ export interface ISourceInfo<T extends Bnk | Pck> {
   id: number | string
   fromType: T extends Bnk ? 'bnk' : 'pck'
   from: T
-  filePath?: string
   dirty: boolean
 }
 
@@ -40,11 +39,12 @@ export class SourceManager {
     this.sources[sourceInfo.id].push(sourceInfo)
 
     if (this.sources[sourceInfo.id].length > 1) {
-      // remove duplicates
+      // remove duplicates except self
       const index = this.sources[sourceInfo.id].findIndex(
-        (item) => item.filePath === sourceInfo.filePath
+        (item) => item.from.filePath === sourceInfo.from.filePath
       )
-      if (index !== -1) {
+      if (index !== -1 && index !== this.sources[sourceInfo.id].length - 1) {
+        // if index is not the last one (added one), remove it
         this.sources[sourceInfo.id].splice(index, 1)
       }
       // sort
@@ -99,7 +99,6 @@ export class SourceManager {
           )
         }
         return expectPath
-        break
       case 'pck':
         const pck = source.from
         label = pck.getLabel()
@@ -117,10 +116,7 @@ export class SourceManager {
           )
         }
         return expectPath
-        break
     }
-
-    return null
   }
 
   /**
@@ -130,7 +126,7 @@ export class SourceManager {
   private sortSources(sources: SourceInfo[]) {
     sources.sort((a, b) => {
       if (a.fromType !== b.fromType) {
-        return a.fromType === 'bnk' ? -1 : 1
+        return a.fromType === 'pck' ? -1 : 1
       }
 
       if (a.fromType === 'pck' && b.fromType === 'pck') {

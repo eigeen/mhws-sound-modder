@@ -3,7 +3,7 @@ import { ElTree } from 'element-plus'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { type DragDropEvent } from '@tauri-apps/api/window'
 import { type Event } from '@tauri-apps/api/event'
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted } from 'vue'
 import type Node from 'element-plus/es/components/tree/src/model/node.mjs'
 
 const DRAG_OVER_CLASS = 'el-tree-custom--drag-over'

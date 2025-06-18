@@ -1,8 +1,9 @@
 <script lang="ts" setup>
+import InfoPanel from '@/components/InfoPanel.vue'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
 import { computed, reactive, ref, toRef } from 'vue'
-import { Bnk, HircNode, MusicSegmentNode, PlayListItem } from '@/libs/bnk'
+import { Bnk, HircNode } from '@/libs/bnk'
 import { ShowError, ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
 import { SearchResult, SearchSource } from '@/components/Toolbar.vue'
@@ -23,9 +24,17 @@ const workspace = useWorkspaceStore()
 const sourceManager = SourceManager.getInstance()
 
 const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
+const infoPanelRef = ref<InstanceType<typeof InfoPanel>>()
 const splitPanel = reactive({
   left: 3,
   right: 7,
+})
+
+const nodeClickState = reactive({
+  count: 0,
+  preId: null as string | number | null,
+  curId: null as string | number | null,
+  timer: undefined as number | undefined,
 })
 
 const selectedDataNode = computed<DataNode | null>(() => {
@@ -281,15 +290,18 @@ async function handleOpenFileDialog() {
       })) ?? []
     console.info('Selected files:', selected)
 
+    const filesToAdd: Array<BnkFile | PckFile> = []
     for (const filePath of selected) {
-      if (workspace.files.some((file) => file.data.filePath === filePath)) {
+      const isDuplicate =
+        workspace.files.some((file) => file.data.filePath === filePath) ||
+        filesToAdd.some((file) => file.data.filePath === filePath)
+      if (isDuplicate) {
         ShowInfo(`File already opened: ${filePath}`)
         continue
       }
 
       let file: BnkFile | PckFile
       const magic = await readFileMagic(filePath)
-      console.log('magic', magic)
       if (arrayCompare(magic, [0x42, 0x4b, 0x48, 0x44])) {
         // BKHD
         const bnk = await Bnk.load(filePath)
@@ -306,9 +318,14 @@ async function handleOpenFileDialog() {
         }
       } else {
         ShowError(`Unsupported file type, ${filePath}`)
-        return
+        continue
       }
-      workspace.files.push(file)
+      filesToAdd.push(file)
+    }
+
+    // Add to workspace
+    if (filesToAdd.length > 0) {
+      workspace.files.push(...filesToAdd)
     }
   } catch (err) {
     ShowError(`Failed to open file: ${err}`)
@@ -383,6 +400,34 @@ async function handleDrop(event: DropEvent) {
   }
 }
 
+function handleNodeClick(data: TreeNode) {
+  function checkDoubleClick(onEvent: () => void | Promise<void>) {
+    nodeClickState.count++
+    if (nodeClickState.preId && nodeClickState.count >= 2) {
+      nodeClickState.curId = data.key
+      nodeClickState.count = 0
+      if (nodeClickState.curId === nodeClickState.preId) {
+        // on double click
+        onEvent()
+        nodeClickState.curId = null
+        nodeClickState.preId = null
+        clearTimeout(nodeClickState.timer)
+        return
+      }
+    }
+    nodeClickState.preId = data.key
+    nodeClickState.timer = window.setTimeout(() => {
+      //300ms内没有第二次点击就把第一次点击的清空
+      nodeClickState.preId = null
+      nodeClickState.count = 0
+    }, 300)
+  }
+
+  checkDoubleClick(async () => {
+    await infoPanelRef.value?.playAudio()
+  })
+}
+
 function handleDeleteNode(data: TreeNode) {
   console.debug('handleDeleteNode', data)
   const filePath = data.key as string
@@ -447,6 +492,7 @@ const menuItems = [
             v-model:selected="workspace.selectedKey"
             :data="workspaceVisualTree"
             @drop="handleDrop"
+            @node-click="handleNodeClick"
           >
             <!-- Right click context menu settings -->
             <template v-slot:contextmenu="props">
@@ -548,7 +594,10 @@ const menuItems = [
       <template #right>
         <!-- Focused tree node details -->
         <div class="info-panel">
-          <InfoPanel v-model="selectedDataNode"></InfoPanel>
+          <InfoPanel
+            ref="infoPanelRef"
+            v-model="selectedDataNode"
+          ></InfoPanel>
         </div>
       </template>
     </SplitPanel>
