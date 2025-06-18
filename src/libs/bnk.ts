@@ -116,7 +116,7 @@ export interface PlayListItem {
   elementType: 'Track' | 'Source' | 'Event'
   /**
    * An unique ID, avoid duplicate
-   * BnkLabel-ElementID
+   * BnkLabel-TrackID-Index-ElementID
    */
   id: string
   /**
@@ -215,12 +215,12 @@ class MusicSegmentVisitor extends BnkVisitor {
       playlist: [],
     }
     const playlist = data.playlist
-      .map((item) => {
+      .map((item, index) => {
         if (item.event_id !== 0) {
           return reactive({
             type: 'PlayListItem',
             elementType: 'Event',
-            id: `${this._bnkLabel}-${item.event_id}`,
+            id: `${this._bnkLabel}-${entry.id}-${index}-${item.event_id}`,
             element_id: item.event_id,
             element: null,
             playAt: toRef(item, 'play_at'),
@@ -232,7 +232,7 @@ class MusicSegmentVisitor extends BnkVisitor {
           return reactive({
             type: 'PlayListItem',
             elementType: 'Source',
-            id: `${this._bnkLabel}-${item.source_id}`,
+            id: `${this._bnkLabel}-${entry.id}-${index}-${item.source_id}`, // BnkLabel-TrackID-Index-ElementID
             element_id: item.source_id,
             element: null,
             playAt: toRef(item, 'play_at'),
@@ -246,7 +246,7 @@ class MusicSegmentVisitor extends BnkVisitor {
             return reactive({
               type: 'PlayListItem',
               elementType: 'Track',
-              id: `${this._bnkLabel}-${item.track_id}`,
+              id: `${this._bnkLabel}-${entry.id}-${index}-${item.track_id}`,
               element_id: item.track_id,
               element: track,
               playAt: toRef(item, 'play_at'),

@@ -3,7 +3,7 @@ import { ElTree } from 'element-plus'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { type DragDropEvent } from '@tauri-apps/api/window'
 import { type Event } from '@tauri-apps/api/event'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import type Node from 'element-plus/es/components/tree/src/model/node.mjs'
 
 const DRAG_OVER_CLASS = 'el-tree-custom--drag-over'
@@ -65,6 +65,34 @@ function focusNode(key: string | number) {
   const node = treeRef.value?.store.nodesMap[key]
   if (node) {
     treeRef.value?.setCurrentNode(node, true)
+    // scroll to focused node
+    nextTick(() => {
+      const nodeEl = document.querySelector(
+        `.el-tree-node[data-key="${key}"]`
+      ) as HTMLElement | null
+      if (nodeEl) {
+        const treeContainer = document.querySelector(
+          `.tree-container`
+        ) as HTMLElement | null
+        if (treeContainer) {
+          const nodeRect = nodeEl.getBoundingClientRect()
+          const treeRect = treeContainer.getBoundingClientRect()
+
+          // check if node is outside of visible area
+          if (
+            nodeRect.top < treeRect.top ||
+            nodeRect.bottom > treeRect.bottom
+          ) {
+            nodeEl.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center',
+            })
+          }
+        } else {
+          console.warn('Auto scroll failed. No tree container found')
+        }
+      }
+    })
   }
 }
 

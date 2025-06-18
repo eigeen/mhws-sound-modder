@@ -2,7 +2,7 @@
 import InfoPanel from '@/components/InfoPanel.vue'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
-import { computed, reactive, ref, toRef } from 'vue'
+import { computed, reactive, ref, toRef, watch } from 'vue'
 import { Bnk, HircNode } from '@/libs/bnk'
 import { ShowError, ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
@@ -53,152 +53,115 @@ const selectedDataNode = computed<DataNode | null>(() => {
   return targetNode
 })
 
-const workspaceVisualTree = computed<TreeNode[]>(() => {
-  console.debug('workspaceVisualTree recompute')
-  function getDirtyRef(id: string | number) {
-    return (
-      (toRef(workspace.flattenNodeMap[id], 'dirty') as unknown as boolean) ??
-      false
-    )
-  }
-  function iterNodes(parent: TreeNode, node: HircNode) {
-    if (!parent.children) {
-      parent.children = []
-    }
+const workspaceVisualTree = ref<TreeNode[]>([])
 
-    let childNode: TreeNode
-    switch (node.type) {
-      case 'MusicSegment':
-        childNode = {
-          label: `Segment ${node.id}`,
-          key: node.id,
-          icon: 'mdi-segment',
-          dirty: getDirtyRef(node.id),
-          children: [],
-        }
-        node.children.forEach((child) => {
-          iterNodes(childNode, child)
-        })
-        parent.children.push(childNode)
-        break
-      case 'MusicTrack':
-        childNode = {
-          label: `Track ${node.id}`,
-          key: node.id,
-          icon: 'mdi-waveform',
-          dirty: getDirtyRef(node.id),
-          children: [],
-        }
-        const playlist = node.playlist
-          .map((item) => {
-            if (item.elementType === 'Source') {
-              return {
-                label: `${item.element_id}.wem`,
-                key: item.id,
-                icon: 'mdi-file-music',
-                dirty: getDirtyRef(item.id),
-                children: [],
-              }
-            } else {
-              return null
-            }
+// Watch and update workspaceVisualTree
+watch(
+  workspace.files,
+  () => {
+    console.debug('workspaceVisualTree recompute')
+    function getDirtyRef(id: string | number) {
+      return (
+        (toRef(workspace.flattenNodeMap[id], 'dirty') as unknown as boolean) ??
+        false
+      )
+    }
+    function iterNodes(parent: TreeNode, node: HircNode) {
+      if (!parent.children) {
+        parent.children = []
+      }
+
+      let childNode: TreeNode
+      switch (node.type) {
+        case 'MusicSegment':
+          childNode = {
+            label: `Segment ${node.id}`,
+            key: node.id,
+            icon: 'mdi-segment',
+            dirty: getDirtyRef(node.id),
+            children: [],
+          }
+          node.children.forEach((child) => {
+            iterNodes(childNode, child)
           })
-          .filter((item) => item !== null) as TreeNode[]
-        childNode.children = playlist
-        parent.children.push(childNode)
-        break
+          parent.children.push(childNode)
+          break
+        case 'MusicTrack':
+          childNode = {
+            label: `Track ${node.id}`,
+            key: node.id,
+            icon: 'mdi-waveform',
+            dirty: getDirtyRef(node.id),
+            children: [],
+          }
+          const playlist = node.playlist
+            .map((item) => {
+              if (item.elementType === 'Source') {
+                return {
+                  label: `${item.element_id}.wem`,
+                  key: item.id,
+                  icon: 'mdi-file-music',
+                  dirty: getDirtyRef(item.id),
+                  children: [],
+                }
+              } else {
+                return null
+              }
+            })
+            .filter((item) => item !== null) as TreeNode[]
+          childNode.children = playlist
+          parent.children.push(childNode)
+          break
+      }
     }
-  }
 
-  return workspace.files.map((file) => {
-    const root: TreeNode = {
-      label: file.data.name,
-      key: file.data.filePath,
-      children: [],
-    }
-    if (file.type === 'bnk') {
-      // build segment tree
-      file.data.getSegmentTree().nodes.forEach((node) => {
-        iterNodes(root, node)
-      })
-      // collect unmanaged wems
-      const unmanagedSources = file.data.getUnmanagedSources()
-      unmanagedSources.forEach((elementId) => {
-        const uniqueId = `${file.data.getLabel()}-${elementId}`
-        root.children!.push({
-          label: `${elementId}.wem`,
-          key: uniqueId,
-          icon: 'mdi-file-music',
-          dirty: getDirtyRef(uniqueId),
+    const result = workspace.files.map((file) => {
+      const root: TreeNode = {
+        label: file.data.name,
+        key: file.data.filePath,
+        children: [],
+      }
+      if (file.type === 'bnk') {
+        // build segment tree
+        file.data.getSegmentTree().nodes.forEach((node) => {
+          iterNodes(root, node)
         })
-      })
-    } else if (file.type === 'pck') {
-      file.data.header.wem_entries.forEach((entry) => {
-        const uniqueId = `${file.data.getLabel()}-${entry.id}`
-        root.children!.push({
-          label: `${entry.id}.wem`,
-          key: uniqueId,
-          icon: 'mdi-file-music',
-          dirty: getDirtyRef(uniqueId),
+        // collect unmanaged wems
+        const unmanagedSources = file.data.getUnmanagedSources()
+        unmanagedSources.forEach((elementId) => {
+          const uniqueId = `${file.data.getLabel()}-${elementId}`
+          root.children!.push({
+            label: `${elementId}.wem`,
+            key: uniqueId,
+            icon: 'mdi-file-music',
+            dirty: getDirtyRef(uniqueId),
+          })
         })
-      })
-    }
-    return root
-  })
+      } else if (file.type === 'pck') {
+        if (!file.data.hasData()) {
+          root.label = `${file.data.name} (no data)`
+        }
+        file.data.header.wem_entries.forEach((entry) => {
+          const uniqueId = `${file.data.getLabel()}-${entry.id}`
+          root.children!.push({
+            label: `${entry.id}.wem`,
+            key: uniqueId,
+            icon: 'mdi-file-music',
+            dirty: getDirtyRef(uniqueId),
+          })
+        })
+      }
+      return root
+    })
 
-  // return workspace.files
-  //   .map((file) => {
-  //     if (file.type === 'bnk') {
-  //       const root: TreeNode = {
-  //         label: file.data.name,
-  //         key: file.data.filePath,
-  //         children: [],
-  //       }
-  //       const segmentTree = file.data.getSegmentTree()
-  //       console.debug('segmentTree', segmentTree)
+    workspaceVisualTree.value = result
+  },
+  { deep: false }
+)
 
-  //       root.children = segmentTree.nodes
-  //         .map((node) => {
-  //           if (node.type === 'MusicSegment') {
-  //             return {
-  //               label: `Segment ${node.id}`,
-  //               key: node.id,
-  //               icon: 'mdi-segment',
-  //               dirty: getDirtyRef(node.id),
-  //               children: node.children.map((node) => {
-  //                 return {
-  //                   label: `Track ${node.id}`,
-  //                   key: node.id,
-  //                   icon: 'mdi-waveform',
-  //                   dirty: getDirtyRef(node.id),
-  //                   children: node.playlist
-  //                     .map((item) => {
-  //                       if (item.elementType === 'Source') {
-  //                         return {
-  //                           label: `${item.element_id}.wem`,
-  //                           key: item.id,
-  //                           icon: 'mdi-file-music',
-  //                           dirty: getDirtyRef(item.id),
-  //                           children: [],
-  //                         }
-  //                       } else {
-  //                         return null
-  //                       }
-  //                     })
-  //                     .filter((item) => item !== null) as TreeNode[],
-  //                 }
-  //               }),
-  //             }
-  //           } else {
-  //             return null
-  //           }
-  //         })
-  //         .filter((node) => node !== null) as TreeNode[]
-  //       return root
-  //     }
-  //   })
-  //   .filter((node) => node !== null) as TreeNode[]
-})
+// const workspaceVisualTree = computed<TreeNode[]>(() => {
+
+// })
 
 const isSearchExpanded = ref(false)
 const searchKeyword = ref('')

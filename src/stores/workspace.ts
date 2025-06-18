@@ -151,6 +151,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
               node.playlist.forEach((item) => {
                 // add source nodes
                 if (item.elementType !== 'Source') return
+
                 const uniqueId = item.id
                 const dirty = computed(() => {
                   const replaceItem = replaceList.value[item.element_id]

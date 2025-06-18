@@ -46,33 +46,38 @@ watch(
       ignoreNextChange = false
       return
     }
-    // if id changed, user may changed the selected node
-    if (oldVal?.id !== newVal?.id) {
-      console.debug('Selected node changed', dataNode.value)
-      if (data.value?.type === 'MusicTrack') {
-        listSelected.value = [data.value.playlist[0]]
-      } else if (data.value?.type === 'Source') {
-        // Auto load audio source when selected node is Source
-        try {
-          const audioPath = await tryGetPlaybackAudio(data.value.id)
-          if (audioPath) {
-            console.debug('Audio player update source', audioPath)
-            audioPlayer.setSource(convertFileSrc(audioPath))
-          } else {
+
+    try {
+      // if id changed, user may changed the selected node
+      if (oldVal?.id !== newVal?.id) {
+        console.debug('Selected node changed', dataNode.value)
+        if (data.value?.type === 'MusicTrack') {
+          listSelected.value = [data.value.playlist[0]]
+        } else if (data.value?.type === 'Source') {
+          // Auto load audio source when selected node is Source
+          try {
+            const audioPath = await tryGetPlaybackAudio(data.value.id)
+            if (audioPath) {
+              console.debug('Audio player update source', audioPath)
+              audioPlayer.setSource(convertFileSrc(audioPath))
+            } else {
+              audioPlayer.stop()
+              audioPlayer.setSource('')
+            }
+          } catch {
+            // Failed to load, keep player hidden
             audioPlayer.stop()
-            audioPlayer.setSource('')
           }
-        } catch {
-          // Failed to load, keep player hidden
-          audioPlayer.stop()
+        }
+      } else {
+        // id not changed, user may edited the values
+        const id = data.value?.id
+        if (id && dataNode.value) {
+          dataNode.value.dirty = true
         }
       }
-    } else {
-      // id not changed, user may edited the values
-      const id = data.value?.id
-      if (id && dataNode.value) {
-        dataNode.value.dirty = true
-      }
+    } catch (err) {
+      console.error(err)
     }
   },
   { deep: true }
@@ -109,7 +114,8 @@ const rangeSliderValue = computed<number[]>({
     if (data.value?.type === 'MusicTrack' && listItemSelected.value) {
       return [
         listItemSelected.value.beginTrimOffset,
-        -listItemSelected.value.endTrimOffset, // from negative value
+        listItemSelected.value.srcDuration +
+          listItemSelected.value.endTrimOffset,
       ]
     }
     return [0, 0]
@@ -117,7 +123,8 @@ const rangeSliderValue = computed<number[]>({
   set: (v) => {
     if (data.value?.type === 'MusicTrack' && listItemSelected.value) {
       listItemSelected.value.beginTrimOffset = v[0]
-      listItemSelected.value.endTrimOffset = -v[1] // to negative value
+      listItemSelected.value.endTrimOffset =
+        v[1] - listItemSelected.value.srcDuration
     }
   },
 })
