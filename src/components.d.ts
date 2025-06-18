@@ -8,6 +8,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AudioPlayer: typeof import('./components/AudioPlayer.vue')['default']
     copy: typeof import('./components/LabelNumberInput copy.vue')['default']
     DraggableTree: typeof import('./components/DragOverTree.vue')['default']
     DragOverTree: typeof import('./components/DragOverTree.vue')['default']

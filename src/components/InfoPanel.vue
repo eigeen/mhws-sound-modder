@@ -11,6 +11,7 @@ import { ShowError } from '@/utils/message'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { exists, rename } from '@tauri-apps/plugin-fs'
 import { computed, ref, watch, onUnmounted, reactive } from 'vue'
+import AudioPlayer from './AudioPlayer.vue'
 
 const dataNode = defineModel<DataNode | null>({ required: true })
 
@@ -18,16 +19,18 @@ const data = computed<DataNodePayload | null>(() => {
   return dataNode.value?.data || null
 })
 
+const audioPlayerRef = ref<InstanceType<typeof AudioPlayer> | null>(null)
+const currentAudioSrc = ref('')
+
 defineExpose({
   playAudio: async function (source?: string) {
     try {
       if (source) {
-        audioPlayer.setSource(source)
+        currentAudioSrc.value = source
       } else if (data.value?.type === 'Source') {
-        const audioPath = await fetchPlaybackAudio(data.value.id)
-        audioPlayer.setSource(convertFileSrc(audioPath))
+        await handlePlayback()
       }
-      await audioPlayer.play()
+      await audioPlayerRef.value?.play()
     } catch (err) {
       ShowError(`Failed to play audio: ${err}`)
     }
@@ -59,14 +62,14 @@ watch(
             const audioPath = await tryGetPlaybackAudio(data.value.id)
             if (audioPath) {
               console.debug('Audio player update source', audioPath)
-              audioPlayer.setSource(convertFileSrc(audioPath))
+              currentAudioSrc.value = convertFileSrc(audioPath)
             } else {
-              audioPlayer.stop()
-              audioPlayer.setSource('')
+              audioPlayerRef.value?.stop()
+              currentAudioSrc.value = ''
             }
           } catch {
             // Failed to load, keep player hidden
-            audioPlayer.stop()
+            audioPlayerRef.value?.stop()
           }
         }
       } else {
@@ -125,46 +128,6 @@ const rangeSliderValue = computed<number[]>({
       listItemSelected.value.beginTrimOffset = v[0]
       listItemSelected.value.endTrimOffset =
         v[1] - listItemSelected.value.srcDuration
-    }
-  },
-})
-
-// Audio player state
-const audioPlayer = reactive({
-  instance: null as InstanceType<typeof HTMLAudioElement> | null,
-  isPlaying: false,
-  currentTime: 0,
-  duration: 0,
-  currentSource: null as string | null,
-  setSource: function (source: string) {
-    if (!this.instance) {
-      this.instance = new Audio(source)
-    } else {
-      this.instance.src = source
-    }
-    this.currentSource = source
-  },
-  play: async function () {
-    try {
-      this.instance!.currentTime = 0
-      await this.instance!.play()
-      this.isPlaying = true
-    } catch (err) {
-      ShowError(`Failed to play audio: ${err}`)
-    }
-  },
-  pause: function () {
-    if (this.instance) {
-      this.instance.pause()
-      this.isPlaying = false
-    }
-  },
-  stop: function () {
-    if (this.instance) {
-      this.instance.pause()
-      this.instance.currentTime = 0
-      this.isPlaying = false
-      this.currentTime = 0
     }
   },
 })
@@ -292,24 +255,70 @@ async function fetchPlaybackAudio(id: number): Promise<string> {
   }
 }
 
+async function fetchReplacedAudio(id: number): Promise<string> {
+  try {
+    const replaceItem = workspace.replaceList[id]
+    if (!replaceItem) {
+      throw new Error('replace item not found in workspace.replaceList')
+    }
+
+    const wemFilePath = replaceItem.path
+    const wavFilePath = wemFilePath.replace('.wem', '.wav')
+    if (await exists(wavFilePath)) {
+      return wavFilePath
+    }
+
+    // transcode
+    if (!(await exists(wemFilePath))) {
+      throw new Error(`Replaced wem file not found at ${wemFilePath}`)
+    }
+    const targetPath = await Transcoder.getInstance().transcode(
+      wemFilePath,
+      'wav'
+    )
+    await rename(targetPath, wavFilePath)
+    return wavFilePath
+  } catch (err) {
+    throw new Error(`Failed to fetch replaced audio: ${err}`)
+  }
+}
+
 async function handlePlayback() {
   if (!data.value || data.value.type !== 'Source') {
     return
   }
 
   try {
-    const audioPath = await fetchPlaybackAudio(data.value.id)
-    audioPlayer.setSource(convertFileSrc(audioPath))
-    await audioPlayer.play()
+    // if imported, play replaced audio, otherwise play original
+    const audioPath = dataNode.value!.dirty
+      ? await fetchReplacedAudio(data.value.id)
+      : await fetchPlaybackAudio(data.value.id)
+    currentAudioSrc.value = convertFileSrc(audioPath)
+    audioPlayerRef.value?.reset()
+    await audioPlayerRef.value?.play()
   } catch (err) {
     ShowError(`Failed to play audio: ${err}`)
-    audioPlayer.stop()
+  }
+}
+
+async function handlePlayOriginal() {
+  if (!data.value || data.value.type !== 'Source' || !dataNode.value!.dirty) {
+    return
+  }
+
+  try {
+    const audioPath = await fetchPlaybackAudio(data.value.id)
+    currentAudioSrc.value = convertFileSrc(audioPath)
+    audioPlayerRef.value?.reset()
+    await audioPlayerRef.value?.play()
+  } catch (err) {
+    ShowError(`Failed to play original: ${err}`)
   }
 }
 
 // Clean up audio player on unmount
 onUnmounted(() => {
-  audioPlayer.stop()
+  audioPlayerRef.value?.stop()
 })
 </script>
 
@@ -425,37 +434,15 @@ onUnmounted(() => {
           class="text-none"
           prepend-icon="mdi-play"
           variant="outlined"
+          @click="handlePlayOriginal"
           >Play Original</v-btn
         >
       </div>
-      <audio
-        v-if="audioPlayer.instance"
-        ref="audioElement"
-        :src="audioPlayer.currentSource || ''"
-        controls
-        @timeupdate="
-          (event) => {
-            audioPlayer.currentTime = (
-              event.target as HTMLAudioElement
-            ).currentTime
-          }
-        "
-        @durationchange="
-          (event) => {
-            audioPlayer.duration = (event.target as HTMLAudioElement).duration
-          }
-        "
-        @play="
-          () => {
-            if (audioPlayer.isPlaying) {
-              audioPlayer.stop()
-            }
-            audioPlayer.play()
-          }
-        "
-        @pause="audioPlayer.pause()"
-        @ended="audioPlayer.stop()"
-      ></audio>
+      <AudioPlayer
+        v-if="currentAudioSrc"
+        ref="audioPlayerRef"
+        :src="currentAudioSrc"
+      />
       <span class="trailing-row"
         >Source from: {{ sourceManager.getSource(data.id)?.from.name }}</span
       >

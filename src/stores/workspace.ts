@@ -113,8 +113,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const selectedKey = ref<string | number | null>(null)
   // Flatten map of all nodes in the files
   const flattenNodeMap = ref<FlattenNodeMap>({})
-  // Replace list, to replace audio data
-  const replaceList = ref<Record<string | number, ReplaceItem>>({})
+  // Replace list, to replace audio data. key: source id
+  const replaceList = ref<Record<number, ReplaceItem>>({})
 
   // Shallow watch files changes
   watch(

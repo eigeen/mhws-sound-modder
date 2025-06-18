@@ -295,6 +295,10 @@ async function handleOpenFileDialog() {
   }
 }
 
+async function handleExport() {
+  
+}
+
 const AUDIO_EXTS: Record<string, boolean> = {
   wem: true,
   wav: true,
@@ -339,12 +343,14 @@ async function handleDrop(event: DropEvent) {
   console.debug('transcode outputPath', outputPath)
 
   // add to replace list
-  workspace.replaceList[key] = {
+  // get source id from unique id
+  const sourceId = node.data.id
+  workspace.replaceList[sourceId] = {
     type: 'audio',
-    id: key,
+    id: sourceId,
     path: outputPath,
   }
-  console.info(`replace audio successfully: ${key} -> ${outputPath}`)
+  console.info(`replace audio successfully: ${sourceId} -> ${outputPath} (from ${key})`)
 
   // apply parent linked changes
   let loopGuard = 32
@@ -399,6 +405,7 @@ function handleDeleteNode(data: TreeNode) {
 
 const menuItems = [
   { title: 'Open File', icon: 'mdi-folder-open', action: handleOpenFileDialog },
+  { title: 'Export', icon: 'mdi-export', action: handleExport },
 ]
 </script>
 
