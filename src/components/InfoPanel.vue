@@ -1,24 +1,20 @@
 <script lang="ts" setup>
-import {
-  Bnk,
-  HircNode,
-  MusicSegmentNode,
-  MusicTrackNode,
-  PlayListItem,
-} from '@/libs/bnk'
-import { LocalDir } from '@/libs/localDir'
+import { MusicSegmentNode, MusicTrackNode, PlayListItem } from '@/libs/bnk'
 import { SourceManager } from '@/libs/source'
 import { Transcoder } from '@/libs/transcode'
-import { DataNode, useWorkspaceStore } from '@/stores/workspace'
+import {
+  DataNode,
+  DataNodePayload,
+  useWorkspaceStore,
+} from '@/stores/workspace'
 import { ShowError } from '@/utils/message'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { join } from '@tauri-apps/api/path'
 import { exists, rename } from '@tauri-apps/plugin-fs'
 import { computed, ref, watch, onUnmounted } from 'vue'
 
 const dataNode = defineModel<DataNode | null>({ required: true })
 
-const data = computed<HircNode | null>(() => {
+const data = computed<DataNodePayload | null>(() => {
   return dataNode.value?.data || null
 })
 
@@ -101,7 +97,7 @@ const isPlaying = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
 
-function getTitle(node: HircNode | null) {
+function getTitle(node: DataNodePayload | null) {
   if (node === null) {
     return ''
   }
@@ -110,17 +106,8 @@ function getTitle(node: HircNode | null) {
       return `Segment ${node.id}`
     case 'MusicTrack':
       return `Track ${node.id}`
-    case 'PlayListItem':
-      switch (node.elementType) {
-        case 'Track':
-          return `Track ${node.element_id}`
-        case 'Source':
-          return `Audio ${node.element_id}.wem`
-        case 'Event':
-          return `Event ${node.element_id}`
-        default:
-          return ''
-      }
+    case 'Source':
+      return `Audio ${node.id}.wem`
     default:
       return ''
   }
@@ -161,28 +148,22 @@ function handleUndo() {
         break
       case 'MusicTrack':
         defaultData = defaultData as MusicTrackNode
-        // object fields are Proxy,
-        // so we need to find their real default values
-        const playlistIds = data.value.playlist.map((item) => item.id)
-        const playlistDefaultData = playlistIds.map(
-          (id) => workspace.flattenNodeMap[id]
-        )
+        const defaultPlaylist = defaultData.playlist
         data.value.playlist.forEach((item, index) => {
-          const defaultItem = playlistDefaultData[index]
-            .defaultData as PlayListItem
+          const defaultItem = defaultPlaylist[index]
           item.playAt = defaultItem.playAt
           item.srcDuration = defaultItem.srcDuration
           item.beginTrimOffset = defaultItem.beginTrimOffset
           item.endTrimOffset = defaultItem.endTrimOffset
         })
         break
-      case 'PlayListItem':
+      case 'Source':
         // remove replace item
-        delete workspace.replaceList[data.value.element_id]
+        delete workspace.replaceList[data.value.id]
         break
     }
     // restore status
-    if (dataNode.value.data.type !== 'PlayListItem') {
+    if (dataNode.value.data.type !== 'Source') {
       dataNode.value.dirty = false
     }
     console.info('Undo success')
@@ -198,10 +179,9 @@ function handleUndo() {
  * Get playable audio file by id.
  * @returns File path
  */
-async function getPlaybackAudio(data: PlayListItem): Promise<string> {
+async function getPlaybackAudio(id: number): Promise<string> {
   try {
-    const sourceId = data.element_id
-    const wemFilePath = await sourceManager.getSourceFilePath(sourceId)
+    const wemFilePath = await sourceManager.getSourceFilePath(id)
     if (!wemFilePath) {
       throw new Error('source ID not found in SourceManager.')
     }
@@ -224,17 +204,13 @@ async function getPlaybackAudio(data: PlayListItem): Promise<string> {
 }
 
 async function handlePlayback() {
-  if (
-    !data.value ||
-    data.value.type !== 'PlayListItem' ||
-    data.value.elementType !== 'Source'
-  ) {
+  if (!data.value || data.value.type !== 'Source') {
     return
   }
 
   try {
     // Get audio file path
-    const audioPath = await getPlaybackAudio(data.value)
+    const audioPath = await getPlaybackAudio(data.value.id)
 
     // Create new audio player if not exists
     if (!audioPlayer.value) {
@@ -356,7 +332,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="data?.type === 'PlayListItem'">
+    <div v-if="data?.type === 'Source'">
       <div>
         <v-btn
           class="text-none"

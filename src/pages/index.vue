@@ -2,15 +2,22 @@
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
 import { computed, reactive, ref, toRef } from 'vue'
-import { Bnk } from '@/libs/bnk'
+import { Bnk, HircNode, MusicSegmentNode, PlayListItem } from '@/libs/bnk'
 import { ShowError, ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
 import { SearchResult, SearchSource } from '@/components/Toolbar.vue'
-import { BnkFile, DataNode, useWorkspaceStore } from '@/stores/workspace'
+import {
+  BnkFile,
+  DataNode,
+  PckFile,
+  useWorkspaceStore,
+} from '@/stores/workspace'
 import { getExtension } from '@/utils/path'
 import { Transcoder } from '@/libs/transcode'
 import { SourceManager } from '@/libs/source'
 import { writeText as writeTextToClipboard } from '@tauri-apps/plugin-clipboard-manager'
+import { arrayCompare, readFileMagic } from '@/utils'
+import { Pck } from '@/libs/pck'
 
 const workspace = useWorkspaceStore()
 const sourceManager = SourceManager.getInstance()
@@ -28,72 +35,160 @@ const selectedDataNode = computed<DataNode | null>(() => {
 
   const targetNode = workspace.flattenNodeMap[workspace.selectedKey]
   if (!targetNode) {
-    console.info('Selected key not found in flatten map:', workspace.selectedKey)
+    console.info(
+      'Selected key not found in flatten map:',
+      workspace.selectedKey
+    )
     return null
   }
   return targetNode
 })
 
-const workspaceVisualTree = computed(() => {
+const workspaceVisualTree = computed<TreeNode[]>(() => {
+  console.debug('workspaceVisualTree recompute')
   function getDirtyRef(id: string | number) {
     return (
       (toRef(workspace.flattenNodeMap[id], 'dirty') as unknown as boolean) ??
       false
     )
   }
+  function iterNodes(parent: TreeNode, node: HircNode) {
+    if (!parent.children) {
+      parent.children = []
+    }
 
-  return workspace.files
-    .map((file) => {
-      if (file.type === 'bnk') {
-        const root: TreeNode = {
-          label: file.data.name,
-          key: file.data.filePath,
+    let childNode: TreeNode
+    switch (node.type) {
+      case 'MusicSegment':
+        childNode = {
+          label: `Segment ${node.id}`,
+          key: node.id,
+          icon: 'mdi-segment',
+          dirty: getDirtyRef(node.id),
           children: [],
         }
-        const segmentTree = file.data.getSegmentTree()
-        console.debug('segmentTree', segmentTree)
-
-        root.children = segmentTree.nodes
-          .map((node) => {
-            if (node.type === 'MusicSegment') {
+        node.children.forEach((child) => {
+          iterNodes(childNode, child)
+        })
+        parent.children.push(childNode)
+        break
+      case 'MusicTrack':
+        childNode = {
+          label: `Track ${node.id}`,
+          key: node.id,
+          icon: 'mdi-waveform',
+          dirty: getDirtyRef(node.id),
+          children: [],
+        }
+        const playlist = node.playlist
+          .map((item) => {
+            if (item.elementType === 'Source') {
               return {
-                label: `Segment ${node.id}`,
-                key: node.id,
-                icon: 'mdi-segment',
-                dirty: getDirtyRef(node.id),
-                children: node.children.map((node) => {
-                  return {
-                    label: `Track ${node.id}`,
-                    key: node.id,
-                    icon: 'mdi-waveform',
-                    dirty: getDirtyRef(node.id),
-                    children: node.playlist
-                      .map((item) => {
-                        if (item.elementType === 'Source') {
-                          return {
-                            label: `${item.element_id}.wem`,
-                            key: item.id,
-                            icon: 'mdi-file-music',
-                            dirty: getDirtyRef(item.id),
-                            children: [],
-                          }
-                        } else {
-                          return null
-                        }
-                      })
-                      .filter((item) => item !== null) as TreeNode[],
-                  }
-                }),
+                label: `${item.element_id}.wem`,
+                key: item.id,
+                icon: 'mdi-file-music',
+                dirty: getDirtyRef(item.id),
+                children: [],
               }
             } else {
               return null
             }
           })
-          .filter((node) => node !== null) as TreeNode[]
-        return root
-      }
-    })
-    .filter((node) => node !== null) as TreeNode[]
+          .filter((item) => item !== null) as TreeNode[]
+        childNode.children = playlist
+        parent.children.push(childNode)
+        break
+    }
+  }
+
+  return workspace.files.map((file) => {
+    const root: TreeNode = {
+      label: file.data.name,
+      key: file.data.filePath,
+      children: [],
+    }
+    if (file.type === 'bnk') {
+      // build segment tree
+      file.data.getSegmentTree().nodes.forEach((node) => {
+        iterNodes(root, node)
+      })
+      // collect unmanaged wems
+      const unmanagedSources = file.data.getUnmanagedSources()
+      unmanagedSources.forEach((elementId) => {
+        const uniqueId = `${file.data.getLabel()}-${elementId}`
+        root.children!.push({
+          label: `${elementId}.wem`,
+          key: uniqueId,
+          icon: 'mdi-file-music',
+          dirty: getDirtyRef(uniqueId),
+        })
+      })
+    } else if (file.type === 'pck') {
+      file.data.header.wem_entries.forEach((entry) => {
+        const uniqueId = `${file.data.getLabel()}-${entry.id}`
+        root.children!.push({
+          label: `${entry.id}.wem`,
+          key: uniqueId,
+          icon: 'mdi-file-music',
+          dirty: getDirtyRef(uniqueId),
+        })
+      })
+    }
+    return root
+  })
+
+  // return workspace.files
+  //   .map((file) => {
+  //     if (file.type === 'bnk') {
+  //       const root: TreeNode = {
+  //         label: file.data.name,
+  //         key: file.data.filePath,
+  //         children: [],
+  //       }
+  //       const segmentTree = file.data.getSegmentTree()
+  //       console.debug('segmentTree', segmentTree)
+
+  //       root.children = segmentTree.nodes
+  //         .map((node) => {
+  //           if (node.type === 'MusicSegment') {
+  //             return {
+  //               label: `Segment ${node.id}`,
+  //               key: node.id,
+  //               icon: 'mdi-segment',
+  //               dirty: getDirtyRef(node.id),
+  //               children: node.children.map((node) => {
+  //                 return {
+  //                   label: `Track ${node.id}`,
+  //                   key: node.id,
+  //                   icon: 'mdi-waveform',
+  //                   dirty: getDirtyRef(node.id),
+  //                   children: node.playlist
+  //                     .map((item) => {
+  //                       if (item.elementType === 'Source') {
+  //                         return {
+  //                           label: `${item.element_id}.wem`,
+  //                           key: item.id,
+  //                           icon: 'mdi-file-music',
+  //                           dirty: getDirtyRef(item.id),
+  //                           children: [],
+  //                         }
+  //                       } else {
+  //                         return null
+  //                       }
+  //                     })
+  //                     .filter((item) => item !== null) as TreeNode[],
+  //                 }
+  //               }),
+  //             }
+  //           } else {
+  //             return null
+  //           }
+  //         })
+  //         .filter((node) => node !== null) as TreeNode[]
+  //       return root
+  //     }
+  //   })
+  //   .filter((node) => node !== null) as TreeNode[]
 })
 
 const isSearchExpanded = ref(false)
@@ -192,17 +287,31 @@ async function handleOpenFileDialog() {
         continue
       }
 
-      const bnk = await Bnk.load(filePath)
-      const file: BnkFile = {
-        type: 'bnk',
-        data: bnk,
+      let file: BnkFile | PckFile
+      const magic = await readFileMagic(filePath)
+      console.log('magic', magic)
+      if (arrayCompare(magic, [0x42, 0x4b, 0x48, 0x44])) {
+        // BKHD
+        const bnk = await Bnk.load(filePath)
+        file = {
+          type: 'bnk',
+          data: bnk,
+        }
+      } else if (arrayCompare(magic, [0x41, 0x4b, 0x50, 0x4b])) {
+        // AKPK
+        const pck = await Pck.load(filePath)
+        file = {
+          type: 'pck',
+          data: pck,
+        }
+      } else {
+        ShowError(`Unsupported file type, ${filePath}`)
+        return
       }
       workspace.files.push(file)
     }
   } catch (err) {
-    ShowError(
-      `Failed to open file: ${err}.Is your file is a valid Sound Bank or Sound Pack?`
-    )
+    ShowError(`Failed to open file: ${err}`)
   }
 }
 
@@ -225,13 +334,7 @@ async function handleDrop(event: DropEvent) {
     return
   }
   // check if drop is valid
-  if (
-    !(
-      node.data &&
-      node.data.type === 'PlayListItem' &&
-      node.data.elementType === 'Source'
-    )
-  ) {
+  if (!(node.data && node.data.type === 'Source')) {
     ShowError('Audio replace is only supported for source nodes.')
     return
   }

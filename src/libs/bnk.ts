@@ -60,12 +60,28 @@ export class Bnk {
     return this.data.sections.find((section) => section.type === 'Didx') ?? null
   }
 
+  public getManagedSources(): number[] {
+    const visitor = new SourceVisitor()
+    this.visit(visitor)
+    return visitor.getSources()
+  }
+
+  public getUnmanagedSources(): number[] {
+    const didx = this.getDidxSection()
+    if (!didx) return []
+    const managed = this.getManagedSources()
+
+    return didx.entries
+      .filter((entry) => !managed.includes(entry.id))
+      .map((entry) => entry.id)
+  }
+
   public async extractData(outputDir: string): Promise<void> {
     return BnkApi.extractData(this.filePath, outputDir)
   }
 }
 
-export type HircNode = MusicSegmentNode | MusicTrackNode | PlayListItem
+export type HircNode = MusicSegmentNode | MusicTrackNode
 
 /**
  * Music segment tree
@@ -74,7 +90,7 @@ export class SegmentTree {
   public nodes: MusicSegmentNode[] = []
 
   constructor(bnk: Bnk) {
-    const visitor = new MusicSegmentVisitor()
+    const visitor = new MusicSegmentVisitor(bnk.getLabel())
     bnk.visit(visitor)
     this.nodes = visitor.musicSegments
   }
@@ -100,7 +116,7 @@ export interface PlayListItem {
   elementType: 'Track' | 'Source' | 'Event'
   /**
    * An unique ID, avoid duplicate
-   * TrackID-ElementID
+   * BnkLabel-ElementID
    */
   id: string
   /**
@@ -183,6 +199,12 @@ export class BnkVisitor {
 class MusicSegmentVisitor extends BnkVisitor {
   public musicSegments: MusicSegmentNode[] = []
   private musicTracks: { [id: number]: MusicTrackNode } = {}
+  private _bnkLabel: string
+
+  constructor(bnkLabel: string) {
+    super()
+    this._bnkLabel = bnkLabel
+  }
 
   public override visitHircMusicTrack(entry: HircMusicTrackEntry): void {
     const data = entry.music_track_initial_values
@@ -198,7 +220,7 @@ class MusicSegmentVisitor extends BnkVisitor {
           return reactive({
             type: 'PlayListItem',
             elementType: 'Event',
-            id: `${entry.id}-${item.event_id}`,
+            id: `${this._bnkLabel}-${item.event_id}`,
             element_id: item.event_id,
             element: null,
             playAt: toRef(item, 'play_at'),
@@ -210,7 +232,7 @@ class MusicSegmentVisitor extends BnkVisitor {
           return reactive({
             type: 'PlayListItem',
             elementType: 'Source',
-            id: `${entry.id}-${item.source_id}`,
+            id: `${this._bnkLabel}-${item.source_id}`,
             element_id: item.source_id,
             element: null,
             playAt: toRef(item, 'play_at'),
@@ -224,7 +246,7 @@ class MusicSegmentVisitor extends BnkVisitor {
             return reactive({
               type: 'PlayListItem',
               elementType: 'Track',
-              id: `${entry.id}-${item.track_id}`,
+              id: `${this._bnkLabel}-${item.track_id}`,
               element_id: item.track_id,
               element: track,
               playAt: toRef(item, 'play_at'),
@@ -288,5 +310,25 @@ class MusicSegmentVisitor extends BnkVisitor {
     }
 
     this.musicSegments.push(node)
+  }
+}
+
+class SourceVisitor extends BnkVisitor {
+  private sources: number[] = []
+
+  public getSources(): number[] {
+    // remove duplicate
+    const uniqueSources = [...new Set(this.sources)]
+    uniqueSources.sort()
+    return uniqueSources
+  }
+
+  public override visitHircMusicTrack(entry: HircMusicTrackEntry): void {
+    const data = entry.music_track_initial_values
+    data.playlist.forEach((item) => {
+      if (item.source_id !== 0) {
+        this.sources.push(item.source_id)
+      }
+    })
   }
 }

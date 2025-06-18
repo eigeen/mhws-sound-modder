@@ -1,3 +1,5 @@
+import { open } from '@tauri-apps/plugin-fs'
+
 export function stringToU32LE(str: string): number {
   if (str.length !== 4) {
     throw new Error('Input string must be exactly 4 characters')
@@ -25,4 +27,31 @@ export async function sha256(text: string): Promise<string> {
   const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
 
   return hashHex
+}
+
+export async function readFileMagic(path: string): Promise<number[]> {
+  const file = await open(path, { read: true })
+  try {
+    const buffer = new Uint8Array(4)
+    const readSize = await file.read(buffer)
+    if (readSize !== 4) {
+      throw new Error('Failed to read magic number: failed to fill buffer.')
+    }
+    return Array.from(buffer)
+  } catch (err) {
+    file.close()
+    throw err
+  }
+}
+
+export function arrayCompare<T>(arr1: T[], arr2: T[]) {
+  if (arr1.length !== arr2.length) {
+    return false
+  }
+  for (let i = 0; i < arr1.length; i++) {
+    if (arr1[i] !== arr2[i]) {
+      return false
+    }
+  }
+  return true
 }
