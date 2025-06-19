@@ -83,6 +83,7 @@ pub fn bnk_save_file(
 
             // 更新 bnk 数据
             update_bnk_data(&mut bnk, &wem_files)?;
+            log::info!("Bnk data updated.")
         }
 
         let file = File::create(path)?;

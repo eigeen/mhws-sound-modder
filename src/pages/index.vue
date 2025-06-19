@@ -345,8 +345,12 @@ async function handleExport() {
         let tempSourceDir: string | undefined
         if (bnk.hasSection('Data')) {
           // 获取所有音源节点的唯一ID
-          const allSourceNodes = Object.entries(workspace.flattenNodeMap)
-            .filter(([_, node]) => node.belongToFile.data === bnk && node.data.type === 'Source')
+          const allSourceNodes = Object.entries(
+            workspace.flattenNodeMap
+          ).filter(
+            ([_, node]) =>
+              node.belongToFile.data === bnk && node.data.type === 'Source'
+          )
           // 收集替换的音源
           const replacedSources = allSourceNodes
             .map(([uniqueId, node]) => workspace.replaceList[uniqueId])
@@ -378,8 +382,12 @@ async function handleExport() {
         let tempSourceDir: string | undefined
         if (pck.hasData()) {
           // 获取所有音源节点的唯一ID
-          const allSourceNodes = Object.entries(workspace.flattenNodeMap)
-            .filter(([_, node]) => node.belongToFile.data === pck && node.data.type === 'Source')
+          const allSourceNodes = Object.entries(
+            workspace.flattenNodeMap
+          ).filter(
+            ([_, node]) =>
+              node.belongToFile.data === pck && node.data.type === 'Source'
+          )
           // 收集替换的音源
           const replacedSources = allSourceNodes
             .map(([uniqueId, node]) => workspace.replaceList[uniqueId])
@@ -447,15 +455,22 @@ async function handleDrop(event: DropEvent) {
     ShowError(`Unsupported file type: ${ext ?? '<no extension>'}`)
   }
 
-  // transcode
   let outputPath: string
-  try {
-    outputPath = await Transcoder.getInstance().transcode(filePath, 'wem')
-  } catch (err) {
-    ShowError(`Failed to transcode: ${err}`)
-    return
+  // transcode if not wem
+  if (ext === 'wem') {
+    // copy to temp dir
+    const tempDir = await LocalDir.getTempDir()
+    outputPath = await join(tempDir, `${node.data.id}.wem`)
+    await copyFile(filePath, outputPath)
+  } else {
+    try {
+      outputPath = await Transcoder.getInstance().transcode(filePath, 'wem')
+    } catch (err) {
+      ShowError(`Failed to transcode: ${err}`)
+      return
+    }
+    console.debug('transcode outputPath', outputPath)
   }
-  console.debug('transcode outputPath', outputPath)
 
   // add to replace list
   // get source id from unique id
