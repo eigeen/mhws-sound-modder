@@ -26,8 +26,12 @@ export class BnkApi {
     return invoke('bnk_extract_data', { path, targetPath })
   }
 
-  public static async saveFile(path: string, bnk: BnkData): Promise<void> {
-    return invoke('bnk_save_file', { path, bnk })
+  public static async saveFile(
+    path: string,
+    bnk: BnkData,
+    dataDir?: string
+  ): Promise<void> {
+    return invoke('bnk_save_file', { path, bnk, dataDir })
   }
 }
 
@@ -50,10 +54,10 @@ export class PckApi {
 
   public static async saveFile(
     header: PckHeader,
-    srcWemPath: string,
-    dstPath: string
+    outputPath: string,
+    dataPath?: string
   ): Promise<void> {
-    return invoke('pck_save_file', { header, srcWemPath, dstPath })
+    return invoke('pck_save_file', { header, outputPath, dataPath })
   }
 }
 

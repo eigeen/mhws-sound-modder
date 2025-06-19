@@ -14,7 +14,7 @@ use crate::service::TranscodeService;
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
 fn panic_hook(info: &std::panic::PanicHookInfo) {
-    log::error!("Backend panic: {:?}", info);
+    log::error!("Backend panic: {:#?}", info);
     log::error!("Application will be closed in 10 seconds");
     std::thread::sleep(std::time::Duration::from_secs(10));
     std::process::exit(1);

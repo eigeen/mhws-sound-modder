@@ -17,28 +17,36 @@ const isMuted = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
 const volume = ref(1)
+const isLoading = ref(false)
 
 // 监听音频源变化
 watch(() => props.src, () => {
   if (audioRef.value) {
+    audioRef.value.pause()
     audioRef.value.currentTime = 0
     currentTime.value = 0
     isPlaying.value = false
+    isLoading.value = false
   }
 })
 
 // 播放控制方法
 const play = async () => {
   try {
-    if (audioRef.value) {
+    if (audioRef.value && !isLoading.value) {
+      isLoading.value = true
       audioRef.value.currentTime = 0
       currentTime.value = 0
       await audioRef.value.play()
       isPlaying.value = true
+      isLoading.value = false
       emit('play')
     }
   } catch (err) {
-    console.error('Failed to play audio:', err)
+    isLoading.value = false
+    if (err instanceof Error && err.name !== 'AbortError') {
+      console.error('Failed to play audio:', err)
+    }
   }
 }
 
@@ -54,6 +62,7 @@ const stop = () => {
     audioRef.value.currentTime = 0
     isPlaying.value = false
     currentTime.value = 0
+    isLoading.value = false
   }
 }
 
@@ -123,6 +132,7 @@ defineExpose({
       <v-btn
         :icon="isPlaying ? 'mdi-pause' : 'mdi-play'"
         variant="text"
+        :disabled="isLoading"
         @click="isPlaying ? pause() : play()"
       ></v-btn>
 

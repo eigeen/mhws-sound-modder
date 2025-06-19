@@ -26,9 +26,14 @@ defineExpose({
   playAudio: async function (source?: string) {
     try {
       if (source) {
+        // 先停止当前播放
+        audioPlayerRef.value?.stop()
         currentAudioSrc.value = source
+        // 等待下一个tick确保AudioPlayer组件已更新
+        await new Promise(resolve => setTimeout(resolve, 0))
       } else if (data.value?.type === 'Source') {
         await handlePlayback()
+        return // handlePlayback已经处理了播放
       }
       await audioPlayerRef.value?.play()
     } catch (err) {
@@ -59,17 +64,20 @@ watch(
         } else if (data.value?.type === 'Source') {
           // Auto load audio source when selected node is Source
           try {
+            // 先停止当前播放
+            audioPlayerRef.value?.stop()
+            
             const audioPath = await tryGetPlaybackAudio(data.value.id)
             if (audioPath) {
               console.debug('Audio player update source', audioPath)
               currentAudioSrc.value = convertFileSrc(audioPath)
             } else {
-              audioPlayerRef.value?.stop()
               currentAudioSrc.value = ''
             }
           } catch {
             // Failed to load, keep player hidden
             audioPlayerRef.value?.stop()
+            currentAudioSrc.value = ''
           }
         }
       } else {
@@ -194,7 +202,10 @@ function handleUndo() {
         break
       case 'Source':
         // remove replace item
-        delete workspace.replaceList[data.value.id]
+        const selectedKey = workspace.selectedKey
+        if (selectedKey && typeof selectedKey === 'string') {
+          delete workspace.replaceList[selectedKey]
+        }
         break
     }
     // restore status
@@ -257,7 +268,14 @@ async function fetchPlaybackAudio(id: number): Promise<string> {
 
 async function fetchReplacedAudio(id: number): Promise<string> {
   try {
-    const replaceItem = workspace.replaceList[id]
+    // 需要找到当前节点的唯一ID
+    const workspace = useWorkspaceStore()
+    const selectedKey = workspace.selectedKey
+    if (!selectedKey || typeof selectedKey !== 'string') {
+      throw new Error('selectedKey not found or not a string')
+    }
+    
+    const replaceItem = workspace.replaceList[selectedKey]
     if (!replaceItem) {
       throw new Error('replace item not found in workspace.replaceList')
     }
@@ -289,11 +307,21 @@ async function handlePlayback() {
   }
 
   try {
+    // 先停止当前播放
+    audioPlayerRef.value?.stop()
+    
     // if imported, play replaced audio, otherwise play original
     const audioPath = dataNode.value!.dirty
       ? await fetchReplacedAudio(data.value.id)
       : await fetchPlaybackAudio(data.value.id)
+    
+    // 设置新的音频源
     currentAudioSrc.value = convertFileSrc(audioPath)
+    
+    // 等待下一个tick确保AudioPlayer组件已更新
+    await new Promise(resolve => setTimeout(resolve, 0))
+    
+    // 重置并播放
     audioPlayerRef.value?.reset()
     await audioPlayerRef.value?.play()
   } catch (err) {
@@ -307,8 +335,18 @@ async function handlePlayOriginal() {
   }
 
   try {
+    // 先停止当前播放
+    audioPlayerRef.value?.stop()
+    
     const audioPath = await fetchPlaybackAudio(data.value.id)
+    
+    // 设置新的音频源
     currentAudioSrc.value = convertFileSrc(audioPath)
+    
+    // 等待下一个tick确保AudioPlayer组件已更新
+    await new Promise(resolve => setTimeout(resolve, 0))
+    
+    // 重置并播放
     audioPlayerRef.value?.reset()
     await audioPlayerRef.value?.play()
   } catch (err) {

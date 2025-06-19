@@ -43,11 +43,13 @@ export interface DataNode {
   defaultData: DataNodePayload
   parent: Reactive<DataNode> | null
   dirty: boolean
+  belongToFile: Reactive<WorkspaceFile>
 }
 
 export type ReplaceItem = {
   type: 'audio'
   id: number | string
+  uniqueId: string
   path: string
 }
 
@@ -113,8 +115,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const selectedKey = ref<string | number | null>(null)
   // Flatten map of all nodes in the files
   const flattenNodeMap = ref<FlattenNodeMap>({})
-  // Replace list, to replace audio data. key: source id
-  const replaceList = ref<Record<number, ReplaceItem>>({})
+  // Replace list, to replace audio data. key: unique id
+  const replaceList = ref<Record<string, ReplaceItem>>({})
 
   // Shallow watch files changes
   watch(
@@ -139,6 +141,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                   : shallowUnref(node),
               parent: parent ?? null,
               dirty: false,
+              belongToFile: file,
             })
             flatten[node.id] = dataNode
 
@@ -154,10 +157,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
                 const uniqueId = item.id
                 const dirty = computed(() => {
-                  const replaceItem = replaceList.value[item.element_id]
+                  const replaceItem = replaceList.value[uniqueId]
                   return replaceItem !== undefined
                 }) as unknown as boolean
-                flatten[uniqueId] = reactive<DataNode>({
+                const node = reactive<DataNode>({
                   data: {
                     type: 'Source',
                     id: item.element_id,
@@ -168,7 +171,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                   },
                   parent: dataNode,
                   dirty,
+                  belongToFile: file,
                 })
+                flatten[uniqueId] = node
                 sourceManager.addSource({
                   id: item.element_id,
                   fromType: 'bnk',
@@ -189,7 +194,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           unmanagedIds.forEach((elementId) => {
             const uniqueId = `${file.data.getLabel()}-${elementId}`
             const dirty = computed(() => {
-              const replaceItem = replaceList.value[elementId]
+              const replaceItem = replaceList.value[uniqueId]
               return replaceItem !== undefined
             }) as unknown as boolean
             if (!flatten[uniqueId]) {
@@ -204,6 +209,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                 },
                 parent: null,
                 dirty,
+                belongToFile: file,
               })
               sourceManager.addSource({
                 id: elementId,
@@ -223,7 +229,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           file.data.header.wem_entries.forEach((entry) => {
             const uniqueId = `${file.data.getLabel()}-${entry.id}`
             const dirty = computed(() => {
-              const replaceItem = replaceList.value[entry.id]
+              const replaceItem = replaceList.value[uniqueId]
               return replaceItem !== undefined
             }) as unknown as boolean
             flatten[uniqueId] = reactive({
@@ -237,6 +243,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
               },
               parent: null,
               dirty,
+              belongToFile: file,
             })
             sourceManager.addSource({
               id: entry.id,

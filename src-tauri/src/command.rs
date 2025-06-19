@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     io::{self, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use eyre::Context;
@@ -54,8 +54,37 @@ pub fn bnk_load_file(
 }
 
 #[tauri::command]
-pub fn bnk_save_file(path: &str, mut bnk: re_sound::bnk::Bnk) -> Result<(), String> {
+pub fn bnk_save_file(
+    path: &str,
+    mut bnk: re_sound::bnk::Bnk,
+    data_dir: Option<&str>,
+) -> Result<(), String> {
     map_result(|| {
+        // load override sound data
+        if let Some(data_dir) = data_dir {
+            let dir_path = Path::new(data_dir);
+            if !dir_path.is_dir() {
+                eyre::bail!(
+                    "Override data path not found or not a directory: {}",
+                    data_dir
+                );
+            }
+
+            // 收集所有 wem 文件
+            let mut wem_files = vec![];
+            for entry in fs::read_dir(dir_path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if !path.is_file() || path.extension().unwrap_or_default() != "wem" {
+                    continue;
+                }
+                wem_files.push(path);
+            }
+
+            // 更新 bnk 数据
+            update_bnk_data(&mut bnk, &wem_files)?;
+        }
+
         let file = File::create(path)?;
         let mut writer = std::io::BufWriter::new(file);
         bnk.write_to(&mut writer)?;
@@ -157,70 +186,75 @@ pub fn pck_extract_data(path: &str, target_path: &str) -> Result<(), String> {
 #[tauri::command]
 pub fn pck_save_file(
     mut header: re_sound::pck::PckHeader,
-    src_wem_path: &str,
-    dst_path: &str,
+    output_path: &str,
+    data_path: Option<&str>,
 ) -> Result<(), String> {
     let result = map_result(|| {
-        let src_wem_path = Path::new(src_wem_path);
-        if !src_wem_path.exists() {
-            eyre::bail!("Source Wem dir not found.");
-        }
-
-        // collect wem files
-        struct WemMetadata {
-            id: u32,
-            file_size: u32,
-            file_path: Option<String>,
-            data: Option<Vec<u8>>,
-        }
+        // If data_path is provided, use it to update header.
         let mut wem_metadata_map = IndexMap::new();
-        for entry in fs::read_dir(src_wem_path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if !path.is_file() || path.extension().unwrap_or_default() != "wem" {
-                continue;
+        if let Some(data_path) = data_path {
+            let data_path = Path::new(data_path);
+            if !data_path.exists() {
+                eyre::bail!("Source Wem dir provided but not found.");
             }
 
-            // 解析wem文件名
-            let file_stem = path.file_stem().unwrap().to_string_lossy();
-            let id: u32 = file_stem.parse()?;
-            wem_metadata_map.insert(
-                id,
-                WemMetadata {
+            // collect wem files
+            struct WemMetadata {
+                id: u32,
+                file_size: u32,
+                file_path: Option<String>,
+                data: Option<Vec<u8>>,
+            }
+            for entry in fs::read_dir(data_path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if !path.is_file() || path.extension().unwrap_or_default() != "wem" {
+                    continue;
+                }
+
+                // 解析wem文件名
+                let file_stem = path.file_stem().unwrap().to_string_lossy();
+                let id: u32 = file_stem.parse()?;
+                wem_metadata_map.insert(
                     id,
-                    file_size: path.metadata()?.len() as u32,
-                    file_path: Some(path.to_string_lossy().to_string()),
-                    data: None,
-                },
-            );
+                    WemMetadata {
+                        id,
+                        file_size: path.metadata()?.len() as u32,
+                        file_path: Some(path.to_string_lossy().to_string()),
+                        data: None,
+                    },
+                );
+            }
+
+            // update header with new wem entries
+            let mut offset = header.get_wem_offset_start();
+            for entry in header.wem_entries.iter_mut() {
+                let metadata = wem_metadata_map.get(&entry.id).ok_or_else(|| {
+                    eyre::eyre!("Wem id not found in source wem dir: {}", entry.id)
+                })?;
+                entry.offset = offset;
+                entry.length = metadata.file_size;
+                offset += metadata.file_size;
+            }
         }
 
-        // update header with new wem entries
-        let mut offset = header.get_wem_offset_start();
-        for entry in header.wem_entries.iter_mut() {
-            let metadata = wem_metadata_map.get(&entry.id).unwrap();
-            entry.offset = offset;
-            entry.length = metadata.file_size;
-            offset += metadata.file_size;
-        }
-
-        let file = File::create(dst_path)?;
+        let file = File::create(output_path)?;
         let mut writer = io::BufWriter::new(file);
         // write header
         header.write_to(&mut writer)?;
 
         // write wem data
-        for metadata in wem_metadata_map.values() {
-            if let Some(data) = &metadata.data {
-                writer.write_all(data)?;
-            } else if let Some(file_path) = &metadata.file_path {
-                let mut input_file = File::open(file_path)?;
-                io::copy(&mut input_file, &mut writer)?;
-            } else {
-                eyre::bail!(
-                    "Internal: both data and file_path are None for Wem file: {}",
-                    metadata.id
-                );
+        if data_path.is_some() {
+            for metadata in wem_metadata_map.values() {
+                if let Some(data) = &metadata.data {
+                    writer.write_all(data)?;
+                } else if let Some(file_path) = &metadata.file_path {
+                    let mut input_file = File::open(file_path)?;
+                    io::copy(&mut input_file, &mut writer)?;
+                } else {
+                    // No data, skip
+                    log::info!("No data for wem file: {}", metadata.id);
+                }
             }
         }
 
@@ -228,7 +262,7 @@ pub fn pck_save_file(
     });
     if result.is_err() {
         // clean up if failed
-        std::fs::remove_file(dst_path).ok();
+        std::fs::remove_file(output_path).ok();
     }
 
     result
@@ -294,4 +328,68 @@ pub fn transcode_auto_transcode(
     output: &str,
 ) -> Result<(), String> {
     map_result(|| service.auto_transcode(input, output))
+}
+
+fn update_bnk_data(bnk: &mut re_sound::bnk::Bnk, wem_files: &[PathBuf]) -> eyre::Result<()> {
+    // Locate DATA and DIDX sections
+    let (data_section, didx_section) =
+        bnk.sections
+            .iter_mut()
+            .fold((None, None), |(data, didx), section| {
+                match &mut section.payload {
+                    SectionPayload::Data { .. } => (Some(section), didx),
+                    SectionPayload::Didx { .. } => (data, Some(section)),
+                    _ => (data, didx),
+                }
+            });
+
+    let (Some(data_section), Some(didx_section)) = (data_section, didx_section) else {
+        log::warn!("No DATA or DIDX section found in Bnk file. Ignore update.");
+        return Ok(());
+    };
+    let SectionPayload::Data { data_list } = &mut data_section.payload else {
+        unreachable!();
+    };
+    let SectionPayload::Didx {
+        entries: didx_entries,
+    } = &mut didx_section.payload
+    else {
+        unreachable!();
+    };
+
+    // 收集所有 wem 文件并按 ID 索引
+    let mut wem_files_map = IndexMap::new();
+    for path in wem_files {
+        let id = path
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .parse::<u32>()
+            .map_err(|_| eyre::eyre!("Invalid wem file name: {}", path.display()))?;
+        wem_files_map.insert(id, path);
+    }
+
+    // 检查是否所有 didx 条目都有对应的 wem 文件
+    for entry in didx_entries.iter() {
+        if !wem_files_map.contains_key(&entry.id) {
+            eyre::bail!("Missing wem file for id {} in override directory", entry.id);
+        }
+    }
+
+    // 按照 didx 顺序创建有序的文件列表
+    let mut wem_files_ordered = Vec::new();
+    for entry in didx_entries.iter() {
+        wem_files_ordered.push(wem_files_map.get(&entry.id).ok_or_else(|| {
+            eyre::eyre!("Missing wem file for id {} in override directory", entry.id)
+        })?);
+    }
+
+    // 按照 didx 顺序更新数据
+    for path in wem_files_ordered {
+        let data = fs::read(path)?;
+        data_list.push(data);
+        // didx section will fixed automatically by re-sound
+    }
+
+    Ok(())
 }

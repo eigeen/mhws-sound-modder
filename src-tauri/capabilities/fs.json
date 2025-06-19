@@ -17,6 +17,7 @@
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
     "fs:allow-open",
-    "fs:allow-read"
+    "fs:allow-read",
+    "fs:allow-copy-file"
   ]
 }

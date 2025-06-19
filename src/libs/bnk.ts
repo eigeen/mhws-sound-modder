@@ -18,6 +18,8 @@ export class Bnk {
   public filePath: string = ''
   private _label: string = ''
   private segmentTree: SegmentTree | null = null
+  private _managedSources: number[] = []
+  private _unmanagedSources: number[] = []
 
   constructor(data: BnkData) {
     this.data = data
@@ -61,19 +63,27 @@ export class Bnk {
   }
 
   public getManagedSources(): number[] {
+    if (this._managedSources.length > 0) {
+      return this._managedSources
+    }
+
     const visitor = new SourceVisitor()
     this.visit(visitor)
-    return visitor.getSources()
+    this._managedSources = visitor.getSources()
+    return this._managedSources
   }
 
   public getUnmanagedSources(): number[] {
+    if (this._unmanagedSources.length > 0) {
+      return this._unmanagedSources
+    }
+
     const didx = this.getDidxSection()
     if (!didx) return []
-    const managed = this.getManagedSources()
-
-    return didx.entries
-      .filter((entry) => !managed.includes(entry.id))
+    this._unmanagedSources = didx.entries
+      .filter((entry) => !this._managedSources.includes(entry.id))
       .map((entry) => entry.id)
+    return this._unmanagedSources
   }
 
   public async extractData(outputDir: string): Promise<void> {

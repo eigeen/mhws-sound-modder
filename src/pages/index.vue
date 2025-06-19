@@ -2,7 +2,7 @@
 import InfoPanel from '@/components/InfoPanel.vue'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
-import { computed, reactive, ref, toRef, watch } from 'vue'
+import { computed, Reactive, reactive, ref, toRef, watch } from 'vue'
 import { Bnk, HircNode } from '@/libs/bnk'
 import { ShowError, ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
@@ -11,6 +11,7 @@ import {
   BnkFile,
   DataNode,
   PckFile,
+  ReplaceItem,
   useWorkspaceStore,
 } from '@/stores/workspace'
 import { getExtension } from '@/utils/path'
@@ -19,6 +20,11 @@ import { SourceManager } from '@/libs/source'
 import { writeText as writeTextToClipboard } from '@tauri-apps/plugin-clipboard-manager'
 import { arrayCompare, readFileMagic } from '@/utils'
 import { Pck } from '@/libs/pck'
+import { BnkApi } from '@/api/tauri'
+import { PckApi } from '@/api/tauri'
+import { LocalDir } from '@/libs/localDir'
+import { mkdir, copyFile, exists, remove } from '@tauri-apps/plugin-fs'
+import { join } from '@tauri-apps/api/path'
 
 const workspace = useWorkspaceStore()
 const sourceManager = SourceManager.getInstance()
@@ -296,7 +302,116 @@ async function handleOpenFileDialog() {
 }
 
 async function handleExport() {
-  
+  try {
+    const filesToExport = new Map<string, Reactive<BnkFile | PckFile>>() // filePath -> file
+    // 1. 检查是否有HIRC被更改
+    Object.values(workspace.flattenNodeMap).forEach((node) => {
+      if (node.dirty) {
+        const file = node.belongToFile
+        filesToExport.set(file.data.filePath, file)
+      }
+    })
+    // 2. 检查是否有音源被替换
+    Object.entries(workspace.replaceList).forEach(([uniqueId, replaceItem]) => {
+      const node = workspace.flattenNodeMap[uniqueId]
+      if (node) {
+        filesToExport.set(node.belongToFile.data.filePath, node.belongToFile)
+      }
+    })
+
+    if (filesToExport.size === 0) {
+      ShowInfo('No files to export')
+      return
+    }
+
+    console.info('filesToExport', filesToExport)
+
+    // 选择导出目录
+    const exportDir = await openDialog({
+      directory: true,
+      multiple: false,
+    })
+    if (!exportDir) return
+
+    // 导出每个文件
+    for (const [_, file] of filesToExport) {
+      const exportPath = await join(exportDir, file.data.name)
+
+      if (file.type === 'bnk') {
+        // BnkFile
+        const bnk = file.data as Bnk
+
+        // 如果bnk包含数据，则替换音源，否则直接导出
+        let tempSourceDir: string | undefined
+        if (bnk.hasSection('Data')) {
+          // 获取所有音源节点的唯一ID
+          const allSourceNodes = Object.entries(workspace.flattenNodeMap)
+            .filter(([_, node]) => node.belongToFile.data === bnk && node.data.type === 'Source')
+          // 收集替换的音源
+          const replacedSources = allSourceNodes
+            .map(([uniqueId, node]) => workspace.replaceList[uniqueId])
+            .filter((item): item is ReplaceItem => item !== undefined)
+          // 创建临时目录存放替换的音源
+          const tempDir = await LocalDir.getTempDir()
+          tempSourceDir = await join(tempDir, 'export', bnk.getLabel())
+          if (await exists(tempSourceDir)) {
+            await remove(tempSourceDir, { recursive: true })
+          }
+          await mkdir(tempSourceDir, { recursive: true })
+
+          // 先提取所有音源
+          await bnk.extractData(tempSourceDir)
+          // 复制替换的音源到临时目录，覆盖已提取的内容
+          for (const source of replacedSources) {
+            const sourcePath = source.path
+            const targetPath = await join(tempSourceDir, `${source.id}.wem`)
+            await copyFile(sourcePath, targetPath)
+          }
+        }
+
+        // 保存BNK文件
+        await BnkApi.saveFile(exportPath, bnk.data, tempSourceDir)
+      } else if (file.type === 'pck') {
+        const pck = file.data as Pck
+
+        // 如果PCK包含数据，则替换音源，否则直接导出
+        let tempSourceDir: string | undefined
+        if (pck.hasData()) {
+          // 获取所有音源节点的唯一ID
+          const allSourceNodes = Object.entries(workspace.flattenNodeMap)
+            .filter(([_, node]) => node.belongToFile.data === pck && node.data.type === 'Source')
+          // 收集替换的音源
+          const replacedSources = allSourceNodes
+            .map(([uniqueId, node]) => workspace.replaceList[uniqueId])
+            .filter((item): item is ReplaceItem => item !== undefined)
+
+          // 创建临时目录存放替换的音源
+          const tempDir = await LocalDir.getTempDir()
+          tempSourceDir = await join(tempDir, 'export', pck.getLabel())
+          if (await exists(tempSourceDir)) {
+            await remove(tempSourceDir, { recursive: true })
+          }
+          await mkdir(tempSourceDir, { recursive: true })
+          // 先提取PCK内容
+          await pck.extractData(tempSourceDir)
+
+          // 复制替换的音源到临时目录,覆盖已提取的内容
+          for (const source of replacedSources) {
+            const sourcePath = source.path
+            const targetPath = await join(tempSourceDir, `${source.id}.wem`)
+            await copyFile(sourcePath, targetPath)
+          }
+        }
+
+        // 保存PCK文件
+        await PckApi.saveFile(pck.header, exportPath, tempSourceDir)
+      }
+    }
+
+    ShowInfo('Export completed')
+  } catch (err) {
+    ShowError(`Export failed: ${err}`)
+  }
 }
 
 const AUDIO_EXTS: Record<string, boolean> = {
@@ -345,28 +460,32 @@ async function handleDrop(event: DropEvent) {
   // add to replace list
   // get source id from unique id
   const sourceId = node.data.id
-  workspace.replaceList[sourceId] = {
+  workspace.replaceList[key] = {
     type: 'audio',
     id: sourceId,
+    uniqueId: key,
     path: outputPath,
   }
-  console.info(`replace audio successfully: ${sourceId} -> ${outputPath} (from ${key})`)
+  console.info(
+    `replace audio successfully: ${sourceId} -> ${outputPath} (from key:${key})`
+  )
+  console.debug('node:', node)
 
-  // apply parent linked changes
-  let loopGuard = 32
-  let parentNode: DataNode | null = node
-  while (node.parent && loopGuard > 0) {
-    loopGuard--
-    parentNode = node.parent
-    switch (parentNode.data.type) {
-      case 'MusicTrack':
-        // TODO: update src duration
-        break
-      case 'MusicSegment':
-        // nothing
-        break
-    }
-  }
+  // // apply parent linked changes
+  // let loopGuard = 32
+  // let parentNode: DataNode | null = node
+  // while (node.parent && loopGuard > 0) {
+  //   loopGuard--
+  //   parentNode = node.parent
+  //   switch (parentNode.data.type) {
+  //     case 'MusicTrack':
+  //       // TODO: update src duration
+  //       break
+  //     case 'MusicSegment':
+  //       // nothing
+  //       break
+  //   }
+  // }
 }
 
 function handleNodeClick(data: TreeNode) {
