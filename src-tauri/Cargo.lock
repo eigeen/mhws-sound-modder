@@ -3127,8 +3127,8 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 
 [[package]]
 name = "re-sound"
-version = "0.3.0"
-source = "git+https://github.com/eigeen/re-sound.git?tag=v0.3.0#845caa67f8d49c8a2eddec18986e3aac6978af7a"
+version = "0.3.1"
+source = "git+https://github.com/eigeen/re-sound.git?tag=v0.3.1#17fcddfa60f082fc2869865282df02b8d3500870"
 dependencies = [
  "binrw",
  "byteorder",
