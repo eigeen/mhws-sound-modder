@@ -1,6 +1,9 @@
 <script lang="ts" setup>
 import InfoPanel from '@/components/InfoPanel.vue'
-import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import {
+  open as openDialog,
+  save as saveDialog,
+} from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
 import { computed, type Reactive, reactive, ref, toRef, watch } from 'vue'
 import { Bnk, type HircNode } from '@/libs/bnk'
@@ -15,7 +18,7 @@ import type {
   ReplaceItem,
 } from '@/stores/workspace'
 import { getExtension } from '@/utils/path'
-import { Transcoder } from '@/libs/transcode'
+import { Transcoder, type TargetFormat } from '@/libs/transcode'
 import { SourceManager } from '@/libs/source'
 import { writeText as writeTextToClipboard } from '@tauri-apps/plugin-clipboard-manager'
 import { arrayCompare, readFileMagic } from '@/utils'
@@ -129,6 +132,7 @@ watch(
         children: [],
       }
       if (file.type === 'bnk') {
+        root.type = 'bnk'
         // build segment tree
         file.data.getSegmentTree().nodes.forEach((node) => {
           iterNodes(root, node)
@@ -145,6 +149,7 @@ watch(
           })
         })
       } else if (file.type === 'pck') {
+        root.type = 'pck'
         if (!file.data.hasData()) {
           root.label = `${file.data.name} (no data)`
         }
@@ -556,28 +561,22 @@ const AUDIO_EXTS: Record<string, boolean> = {
   aac: true,
 }
 
-async function handleDrop(event: DropEvent) {
-  console.debug('handleDrop event', event)
-  const { key, paths } = event
-  const node = workspace.flattenNodeMap[key]
+async function importAudio(uniqueId: string, filePath: string) {
+  const node = workspace.flattenNodeMap[uniqueId]
   if (!node) {
-    // not found in map, ignore
-    console.info('drop key not found in map')
+    ShowError('Node not found')
     return
   }
-  // check if drop is valid
-  if (!(node.data && node.data.type === 'Source')) {
-    ShowError('Audio replace is only supported for source nodes.')
+  if (node.data.type !== 'Source') {
+    ShowError('Audio import is only supported for source nodes.')
     return
   }
 
-  // currently we only support single file drop
-  // multiple file drop will be supported in the future
-  const filePath = paths[0]
   // check if file is audio file
   const ext = getExtension(filePath)
   if (!ext || !AUDIO_EXTS[ext]) {
     ShowError(`Unsupported file type: ${ext ?? '<no extension>'}`)
+    return
   }
 
   let outputPath: string
@@ -600,16 +599,15 @@ async function handleDrop(event: DropEvent) {
   // add to replace list
   // get source id from unique id
   const sourceId = node.data.id
-  workspace.replaceList[key] = {
+  workspace.replaceList[uniqueId] = {
     type: 'audio',
     id: sourceId,
-    uniqueId: key,
+    uniqueId,
     path: outputPath,
   }
   console.info(
-    `replace audio successfully: ${sourceId} -> ${outputPath} (from key:${key})`
+    `replace audio successfully: ${sourceId} -> ${outputPath} (from uniqueId: ${uniqueId})`
   )
-  console.debug('node:', node)
 
   // // apply parent linked changes
   // let loopGuard = 32
@@ -626,6 +624,48 @@ async function handleDrop(event: DropEvent) {
   //       break
   //   }
   // }
+}
+
+async function handleDrop(event: DropEvent) {
+  console.debug('handleDrop event', event)
+  const { key, paths } = event
+
+  // currently we only support single file drop
+  // multiple file drop will be supported in the future
+  await importAudio(key, paths[0])
+}
+
+async function handleDumpAudio(uniqueId: string, format: TargetFormat) {
+  try {
+    const node = workspace.flattenNodeMap[uniqueId]
+    if (!node) {
+      throw new Error('Node not found')
+    }
+
+    const source = sourceManager.getSource(node.data.id)
+    if (!source) {
+      throw new Error('Source not found')
+    }
+
+    const sourceId = source.id
+    const outputFilePath = await source.from.transcodeSource(sourceId, format)
+
+    const outputPath = await saveDialog({
+      filters: [
+        {
+          name: 'Audio',
+          extensions: [format],
+        },
+      ],
+      defaultPath: `${sourceId}.${format}`,
+    })
+    if (!outputPath) return
+
+    await copyFile(outputFilePath, outputPath)
+    ShowInfo(`${format} file dumped: ${outputPath}`)
+  } catch (err) {
+    ShowError(`Failed to dump ${format} file: ${err}`)
+  }
 }
 
 function handleNodeClick(data: TreeNode) {
@@ -662,9 +702,82 @@ function handleDeleteNode(data: TreeNode) {
   workspace.removeFile(filePath)
 }
 
+async function handleImportAudioViaDialog(uniqueId: string) {
+  const selected = await openDialog({
+    filters: [
+      {
+        name: 'Audio',
+        extensions: ['wem', 'wav', 'ogg', 'flac', 'mp3', 'aac'],
+      },
+    ],
+    multiple: false,
+    directory: false,
+  })
+  if (selected) {
+    await importAudio(uniqueId, selected)
+  }
+}
+
 const menuItems = [
   { title: 'Open File', icon: 'mdi-folder-open', action: handleOpenFileDialog },
   { title: 'Export', icon: 'mdi-export', action: handleExport },
+]
+
+// 右键菜单项数据驱动配置
+const contextMenuItems = [
+  {
+    show: () => true,
+    icon: 'mdi-content-copy',
+    label: 'Copy ID',
+    value: 'copy-id',
+    action: (data: TreeNode | null) => {
+      if (!data) return
+      if (data.type === 'Source') {
+        const node = workspace.flattenNodeMap[data.key]
+        if (!node) return
+        writeTextToClipboard(node.data.id.toString())
+      } else {
+        writeTextToClipboard(data.key.toString())
+      }
+    },
+  },
+  {
+    show: (data: TreeNode | null) => ['bnk', 'pck'].includes(data?.type ?? ''),
+    icon: 'mdi-delete',
+    label: 'Close',
+    value: 'close',
+    action: (data: TreeNode | null) => handleDeleteNode(data as TreeNode),
+  },
+  {
+    show: (data: TreeNode | null) => data?.icon === 'mdi-file-music',
+    icon: 'mdi-import',
+    label: 'Import Audio',
+    value: 'import-audio',
+    action: async (data: TreeNode | null) => {
+      if (!data) return
+      await handleImportAudioViaDialog(data.key.toString())
+    },
+  },
+  {
+    show: (data: TreeNode | null) => data?.icon === 'mdi-file-music',
+    icon: 'mdi-download',
+    label: 'Dump .wem',
+    value: 'dump-wem',
+    action: async (data: TreeNode | null) => {
+      if (!data) return
+      await handleDumpAudio(data.key.toString(), 'wem')
+    },
+  },
+  {
+    show: (data: TreeNode | null) => data?.icon === 'mdi-file-music',
+    icon: 'mdi-transfer-down',
+    label: 'Dump .wav',
+    value: 'dump-wav',
+    action: async (data: TreeNode | null) => {
+      if (!data) return
+      await handleDumpAudio(data.key.toString(), 'wav')
+    },
+  },
 ]
 </script>
 
@@ -723,97 +836,23 @@ const menuItems = [
             @drop="handleDrop"
             @node-click="handleNodeClick"
           >
-            <!-- Right click context menu settings -->
+            <!-- 数据驱动右键菜单 -->
             <template v-slot:contextmenu="props">
               <v-list density="compact">
-                <template v-if="props.data?.icon === 'mdi-segment'">
-                  <v-list-item
-                    value="play-segment"
-                    title="播放片段"
-                    @click="console.log('Play segment', props.data)"
-                  >
-                    <template v-slot:title>
-                      <v-icon class="mr-2">mdi-play</v-icon>
-                      <span>播放片段</span>
-                    </template>
-                  </v-list-item>
-                  <v-list-item
-                    value="export-segment"
-                    @click="console.log('Export segment', props.data)"
-                  >
-                    <template v-slot:title>
-                      <v-icon class="mr-2">mdi-export</v-icon>
-                      <span>导出片段</span>
-                    </template>
-                  </v-list-item>
-                </template>
-
-                <template v-else-if="props.data?.icon === 'mdi-waveform'">
-                  <v-list-item
-                    value="mute-track"
-                    title="静音轨道"
-                    @click="console.log('Mute track', props.data)"
-                  >
-                    <template v-slot:title>
-                      <v-icon class="mr-2">mdi-volume-off</v-icon>
-                      <span>静音轨道</span>
-                    </template>
-                  </v-list-item>
-                  <v-list-item
-                    value="solo-track"
-                    @click="console.log('Solo track', props.data)"
-                  >
-                    <template v-slot:title>
-                      <v-icon class="mr-2">mdi-account-music</v-icon>
-                      <span>独奏轨道</span>
-                    </template>
-                  </v-list-item>
-                </template>
-
-                <template v-else-if="props.data?.icon === 'mdi-file-music'">
-                  <v-list-item
-                    value="extract-wem"
-                    title="提取WEM文件"
-                    @click="console.log('Extract WEM', props.data)"
-                  >
-                    <template v-slot:title>
-                      <v-icon class="mr-2">mdi-download</v-icon>
-                      <span>提取WEM文件</span>
-                    </template>
-                  </v-list-item>
-                  <v-list-item
-                    value="convert-wem"
-                    @click="console.log('Convert WEM', props.data)"
-                  >
-                    <template v-slot:title>
-                      <v-icon class="mr-2">mdi-file-convert</v-icon>
-                      <span>转换WEM格式</span>
-                    </template>
-                  </v-list-item>
-                </template>
-
-                <template v-else>
-                  <v-list-item
-                    value="copy-id"
-                    @click="
-                      writeTextToClipboard(props.data?.key.toString() ?? '')
-                    "
-                  >
-                    <template v-slot:title>
-                      <v-icon class="mr-2">mdi-content-copy</v-icon>
-                      <span>Copy ID</span>
-                    </template>
-                  </v-list-item>
-                  <v-list-item
-                    value="close"
-                    @click="handleDeleteNode(props.data!)"
-                  >
-                    <template v-slot:title>
-                      <v-icon class="mr-2">mdi-delete</v-icon>
-                      <span>Close</span>
-                    </template>
-                  </v-list-item>
-                </template>
+                <v-list-item
+                  v-for="(item, index) in contextMenuItems.filter((item) =>
+                    item.show(props.data)
+                  )"
+                  :key="item.value"
+                  :value="item.value"
+                  :title="item.label"
+                  @click="item.action(props.data)"
+                >
+                  <template v-slot:title>
+                    <v-icon class="mr-2">{{ item.icon }}</v-icon>
+                    <span>{{ item.label }}</span>
+                  </template>
+                </v-list-item>
               </v-list>
             </template>
           </DragOverTree>

@@ -9,7 +9,7 @@ import { exists } from '@tauri-apps/plugin-fs'
 export type SourceInfo = ISourceInfo<Bnk> | ISourceInfo<Pck>
 
 export interface ISourceInfo<T extends Bnk | Pck> {
-  id: number | string
+  id: number
   fromType: T extends Bnk ? 'bnk' : 'pck'
   from: T
   dirty: boolean

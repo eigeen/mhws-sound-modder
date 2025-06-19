@@ -4,7 +4,7 @@ import { join } from '@tauri-apps/api/path'
 import { Transcode } from '@/api/tauri'
 import { exists } from '@tauri-apps/plugin-fs'
 
-export type TargetFormat = 'wav' | 'wem'
+export type TargetFormat = 'wav' | 'wem' | 'ogg' | 'flac' | 'mp3' | 'aac'
 
 export class Transcoder {
   private static instance: Transcoder | null = null

@@ -120,7 +120,7 @@ pub fn bnk_extract_data(path: &str, target_path: &str) -> Result<(), String> {
             }
         }
         let Some(data) = data else {
-            eyre::bail!("No data found in Bnk file. This Bnk may not contains actual sound data.");
+            eyre::bail!("No data found in Bnk file. This Bnk may not contain actual sound data.");
         };
         if wem_ids.len() != data.len() {
             eyre::bail!("Number of Wem IDs and data entries do not match.");

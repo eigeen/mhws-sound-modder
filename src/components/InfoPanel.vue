@@ -241,23 +241,17 @@ async function tryGetPlaybackAudio(id: number): Promise<string | null> {
  */
 async function fetchPlaybackAudio(id: number): Promise<string> {
   try {
-    const wemFilePath = await sourceManager.getSourceFilePath(id)
-    if (!wemFilePath) {
-      throw new Error('source ID not found in SourceManager.')
+    const source = sourceManager.getSource(id)
+    if (!source) {
+      throw new Error('Source not found in SourceManager.')
     }
 
-    const wavFilePath = wemFilePath.replace('.wem', '.wav')
-    if (await exists(wavFilePath)) {
-      return wavFilePath
+    // 根据来源类型调用相应的转码方法
+    if (source.fromType === 'bnk') {
+      return await source.from.transcodeSource(id, 'wav')
+    } else {
+      return await source.from.transcodeSource(id, 'wav')
     }
-
-    // wav not found, transcode
-    const targetPath = await Transcoder.getInstance().transcode(
-      wemFilePath,
-      'wav'
-    )
-    await rename(targetPath, wavFilePath)
-    return wavFilePath
   } catch (err) {
     throw new Error(`Failed to fetch playback audio: ${err}`)
   }
