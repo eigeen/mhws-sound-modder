@@ -1,4 +1,4 @@
-import { HircEntry } from './hirc'
+import type { HircEntry } from './hirc'
 
 export interface BnkData {
   sections: Section[]

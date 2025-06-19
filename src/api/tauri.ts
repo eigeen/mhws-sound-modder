@@ -1,5 +1,5 @@
-import { BnkData } from '@/models/bnk'
-import { PckHeader } from '@/models/pck'
+import type { BnkData } from '@/models/bnk'
+import type { PckHeader } from '@/models/pck'
 import { stringToU32LE } from '@/utils'
 import { invoke } from '@tauri-apps/api/core'
 

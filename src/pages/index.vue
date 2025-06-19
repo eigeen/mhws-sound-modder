@@ -2,17 +2,17 @@
 import InfoPanel from '@/components/InfoPanel.vue'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
-import { computed, Reactive, reactive, ref, toRef, watch } from 'vue'
-import { Bnk, HircNode } from '@/libs/bnk'
+import { computed, type Reactive, reactive, ref, toRef, watch } from 'vue'
+import { Bnk, type HircNode } from '@/libs/bnk'
 import { ShowError, ShowInfo, ShowWarn } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
-import { SearchResult, SearchSource } from '@/components/Toolbar.vue'
-import {
+import type { SearchResult, SearchSource } from '@/components/Toolbar.vue'
+import { useWorkspaceStore } from '@/stores/workspace'
+import type {
   BnkFile,
   DataNode,
   PckFile,
   ReplaceItem,
-  useWorkspaceStore,
 } from '@/stores/workspace'
 import { getExtension } from '@/utils/path'
 import { Transcoder } from '@/libs/transcode'

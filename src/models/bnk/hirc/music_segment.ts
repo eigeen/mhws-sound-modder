@@ -1,4 +1,4 @@
-import { NodeBaseParams } from "./common";
+import type { NodeBaseParams } from "./common";
 
 export interface HircMusicSegment {
     music_segment_initial_values: MusicSegmentInitialValues;

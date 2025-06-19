@@ -1,6 +1,6 @@
-import { HircMusicRanSeqCntr } from './music_ran_seq_cntr'
-import { HircMusicSegment } from './music_segment'
-import { HircMusicTrack } from './music_track'
+import type { HircMusicRanSeqCntr } from './music_ran_seq_cntr'
+import type { HircMusicSegment } from './music_segment'
+import type { HircMusicTrack } from './music_track'
 
 export type HircEntry =
   | HircSettingsEntry

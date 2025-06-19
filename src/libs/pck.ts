@@ -1,5 +1,5 @@
 import { PckApi } from '@/api/tauri'
-import { PckHeader } from '@/models/pck'
+import type { PckHeader } from '@/models/pck'
 import { getFileName } from '@/utils/path'
 import { sha256 } from '@/utils'
 

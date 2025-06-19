@@ -9,10 +9,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AudioPlayer: typeof import('./components/AudioPlayer.vue')['default']
-    copy: typeof import('./components/LabelNumberInput copy.vue')['default']
-    DraggableTree: typeof import('./components/DragOverTree.vue')['default']
     DragOverTree: typeof import('./components/DragOverTree.vue')['default']
-    HelloWorld: typeof import('./components/HelloWorld.vue')['default']
     InfoPanel: typeof import('./components/InfoPanel.vue')['default']
     LabelNumberInput: typeof import('./components/LabelNumberInput.vue')['default']
     NumberInput: typeof import('./components/NumberInput.vue')['default']

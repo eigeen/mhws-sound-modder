@@ -1,6 +1,6 @@
 import { BnkApi } from '@/api/tauri'
-import { BnkData, DidxSection, Section } from '@/models/bnk'
-import {
+import type { BnkData, DidxSection, Section } from '@/models/bnk'
+import type {
   HircEntry,
   HircEventEntry,
   HircMusicRanSeqCntrEntry,
@@ -10,7 +10,7 @@ import {
 } from '@/models/bnk/hirc'
 import { sha256 } from '@/utils'
 import { getFileName } from '@/utils/path'
-import { reactive, Reactive, ref, toRef } from 'vue'
+import { reactive, type Reactive, ref, toRef } from 'vue'
 
 export class Bnk {
   public data: BnkData

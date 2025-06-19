@@ -1,4 +1,4 @@
-import { MusicNodeParams } from "./music_segment";
+import type { MusicNodeParams } from "./music_segment";
 
 export interface HircMusicRanSeqCntr {
     music_ran_seq_cntr_initial_values: MusicRanSeqCntrInitialValues;

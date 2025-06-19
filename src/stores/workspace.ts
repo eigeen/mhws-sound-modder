@@ -1,5 +1,5 @@
-import { Bnk, HircNode } from '@/libs/bnk'
-import { Pck } from '@/libs/pck'
+import type { Bnk, HircNode } from '@/libs/bnk'
+import type { Pck } from '@/libs/pck'
 import { SourceManager } from '@/libs/source'
 import { defineStore } from 'pinia'
 import {
@@ -7,7 +7,7 @@ import {
   isReactive,
   isRef,
   reactive,
-  Reactive,
+  type Reactive,
   ref,
   toRaw,
   unref,

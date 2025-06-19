@@ -1,4 +1,4 @@
-import { AkRTPCGraphPoint, NodeBaseParams } from "./common";
+import type { AkRTPCGraphPoint, NodeBaseParams } from "./common";
 
 export interface HircMusicTrack {
     music_track_initial_values: MusicTrackInitialValues;
