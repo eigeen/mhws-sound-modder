@@ -24,3 +24,4 @@ dist-ssr
 *.sw?
 
 test_files/
+dist-app/

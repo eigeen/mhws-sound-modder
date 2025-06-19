@@ -5,6 +5,9 @@ use std::{
     process::Command,
 };
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 const WWISE_BASE_DEFAULT_PATH: &str = r"C:\Program Files (x86)\Audiokinetic";
 
 type Result<T> = std::result::Result<T, WwiseError>;
@@ -89,13 +92,21 @@ impl WwiseConsole {
             return Err(WwiseError::ProjectAlreadyExists(project_path));
         }
 
-        let result = Command::new(program_path)
-            .args([
-                "create-new-project",
-                project_path.to_str().unwrap(),
-                "--platform",
-                "Windows",
-            ])
+        let mut command = Command::new(program_path);
+        command.args([
+            "create-new-project",
+            project_path.to_str().unwrap(),
+            "--platform",
+            "Windows",
+        ]);
+
+        #[cfg(target_os = "windows")]
+        {
+            // 隐藏控制台窗口 (CREATE_NO_WINDOW = 0x08000000)
+            command.creation_flags(0x08000000);
+        }
+
+        let result = command
             .output()
             .map_err(WwiseError::CommandExecutionFailed)?;
         if !result.status.success() {
@@ -119,9 +130,16 @@ impl WwiseConsole {
     /// Test if the console can be executed.
     pub fn test_console(path: impl AsRef<Path>) -> bool {
         let path = path.as_ref();
-        let result = Command::new(path)
-            .args(["create-new-project", "--help"])
-            .output();
+        let mut command = Command::new(path);
+        command.args(["create-new-project", "--help"]);
+
+        #[cfg(target_os = "windows")]
+        {
+            // 隐藏控制台窗口 (CREATE_NO_WINDOW = 0x08000000)
+            command.creation_flags(0x08000000);
+        }
+
+        let result = command.output();
         let Ok(result) = result else {
             return false;
         };
@@ -218,15 +236,23 @@ impl<'a> WwiseProject<'a> {
         }
 
         let output_path = output_dir.as_ref().replace("/", "\\").replace(r"\\?\", "");
-        let result = Command::new(console_path)
-            .args([
-                "convert-external-source",
-                self.project_path.to_str().unwrap(),
-                "--source-file",
-                source_file_path.to_str().unwrap(),
-                "--output",
-                &output_path,
-            ])
+        let mut command = Command::new(console_path);
+        command.args([
+            "convert-external-source",
+            self.project_path.to_str().unwrap(),
+            "--source-file",
+            source_file_path.to_str().unwrap(),
+            "--output",
+            &output_path,
+        ]);
+
+        #[cfg(target_os = "windows")]
+        {
+            // 隐藏控制台窗口 (CREATE_NO_WINDOW = 0x08000000)
+            command.creation_flags(0x08000000);
+        }
+
+        let result = command
             .output()
             .map_err(WwiseError::CommandExecutionFailed)?;
         if !result.status.success() {

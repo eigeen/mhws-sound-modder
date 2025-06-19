@@ -4,6 +4,9 @@ use std::{
     process::Command,
 };
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 type Result<T> = std::result::Result<T, FFmpegError>;
 
 #[derive(Debug, thiserror::Error)]
@@ -55,16 +58,25 @@ impl FFmpegCli {
         let Some(program_path) = self.path.as_ref() else {
             return Err(FFmpegError::FFmpegNotFound);
         };
-        let result = Command::new(program_path)
-            .args([
-                "-hide_banner",
-                "-loglevel",
-                "warning",
-                "-i",
-                input.to_str().unwrap(),
-                "-y",
-                output.to_str().unwrap(),
-            ])
+
+        let mut command = Command::new(program_path);
+        command.args([
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-i",
+            input.to_str().unwrap(),
+            "-y",
+            output.to_str().unwrap(),
+        ]);
+
+        #[cfg(target_os = "windows")]
+        {
+            // 隐藏控制台窗口 (CREATE_NO_WINDOW = 0x08000000)
+            command.creation_flags(0x08000000);
+        }
+
+        let result = command
             .output()
             .map_err(FFmpegError::CommandExecutionFailed)?;
 
@@ -82,7 +94,16 @@ impl FFmpegCli {
     /// Test if the ffmpeg can be executed.
     pub fn test_ffmpeg_cli(path: impl AsRef<Path>) -> bool {
         let path = path.as_ref();
-        let result = Command::new(path).args(["-version"]).output();
+        let mut command = Command::new(path);
+        command.args(["-version"]);
+
+        #[cfg(target_os = "windows")]
+        {
+            // 隐藏控制台窗口 (CREATE_NO_WINDOW = 0x08000000)
+            command.creation_flags(0x08000000);
+        }
+
+        let result = command.output();
         let Ok(result) = result else {
             return false;
         };

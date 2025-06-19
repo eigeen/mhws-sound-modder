@@ -4,6 +4,9 @@ use std::{
     process::Command,
 };
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 type Result<T> = std::result::Result<T, VgmstreamError>;
 
 #[derive(Debug, thiserror::Error)]
@@ -50,8 +53,17 @@ impl VgmstreamCli {
         let Some(program_path) = self.path.as_ref() else {
             return Err(VgmstreamError::CliNotFound);
         };
-        let result = Command::new(program_path)
-            .args([input.to_str().unwrap(), "-o", output.to_str().unwrap()])
+
+        let mut command = Command::new(program_path);
+        command.args([input.to_str().unwrap(), "-o", output.to_str().unwrap()]);
+
+        #[cfg(target_os = "windows")]
+        {
+            // 隐藏控制台窗口 (CREATE_NO_WINDOW = 0x08000000)
+            command.creation_flags(0x08000000);
+        }
+
+        let result = command
             .output()
             .map_err(VgmstreamError::CommandExecutionFailed)?;
 
@@ -68,7 +80,16 @@ impl VgmstreamCli {
 
     pub fn test_cli(path: impl AsRef<Path>) -> bool {
         let path = path.as_ref();
-        let result = Command::new(path).args(["-h"]).output();
+        let mut command = Command::new(path);
+        command.args(["-h"]);
+
+        #[cfg(target_os = "windows")]
+        {
+            // 隐藏控制台窗口 (CREATE_NO_WINDOW = 0x08000000)
+            command.creation_flags(0x08000000);
+        }
+
+        let result = command.output();
         let Ok(result) = result else {
             return false;
         };
