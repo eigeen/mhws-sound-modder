@@ -1,3 +1,5 @@
+export * from './logger'
+
 import { open } from '@tauri-apps/plugin-fs'
 
 export function stringToU32LE(str: string): number {
