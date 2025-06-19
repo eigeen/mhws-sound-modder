@@ -4,6 +4,7 @@ import {
   open as openDialog,
   save as saveDialog,
 } from '@tauri-apps/plugin-dialog'
+import { useDark, useToggle } from '@vueuse/core'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
 import { computed, type Reactive, reactive, ref, toRef, watch } from 'vue'
 import { Bnk, type HircNode } from '@/libs/bnk'
@@ -18,7 +19,11 @@ import type {
   ReplaceItem,
 } from '@/stores/workspace'
 import { getExtension } from '@/utils/path'
-import { Transcoder, type TargetFormat } from '@/libs/transcode'
+import {
+  TargetFormatList,
+  Transcoder,
+  type TargetFormat,
+} from '@/libs/transcode'
 import { SourceManager } from '@/libs/source'
 import { writeText as writeTextToClipboard } from '@tauri-apps/plugin-clipboard-manager'
 import { arrayCompare, readFileMagic } from '@/utils'
@@ -29,9 +34,18 @@ import { LocalDir } from '@/libs/localDir'
 import { mkdir, copyFile, exists, remove } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
 import { exportLogger } from '@/utils/logger'
+import { useTheme } from 'vuetify'
 
 const workspace = useWorkspaceStore()
 const sourceManager = SourceManager.getInstance()
+const isDark = useDark()
+const theme = useTheme()
+const toggleDark = useToggle(isDark)
+
+// 监听暗色模式变化并同步到 Vuetify 主题
+watch(isDark, (dark) => {
+  theme.global.name.value = dark ? 'dark' : 'light'
+})
 
 const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
 const infoPanelRef = ref<InstanceType<typeof InfoPanel>>()
@@ -707,7 +721,7 @@ async function handleImportAudioViaDialog(uniqueId: string) {
     filters: [
       {
         name: 'Audio',
-        extensions: ['wem', 'wav', 'ogg', 'flac', 'mp3', 'aac'],
+        extensions: TargetFormatList,
       },
     ],
     multiple: false,
@@ -784,34 +798,51 @@ const contextMenuItems = [
 <template>
   <div class="app-container">
     <div class="top-bar">
-      <v-menu>
-        <template v-slot:activator="{ props }">
-          <v-btn
-            icon="mdi-menu"
-            density="comfortable"
-            variant="text"
-            v-bind="props"
-          >
-          </v-btn>
-        </template>
-        <v-list>
-          <v-list-item
-            v-for="(item, index) in menuItems"
-            :key="index"
-            :value="index"
-            @click="item.action"
-          >
-            <v-list-item-title>
-              <v-icon
-                v-if="item.icon"
-                class="mr-2"
-                >{{ item.icon }}</v-icon
-              >
-              <span>{{ item.title }}</span>
-            </v-list-item-title>
-          </v-list-item>
-        </v-list>
-      </v-menu>
+      <div class="top-bar-left">
+        <v-menu>
+          <template v-slot:activator="{ props }">
+            <v-btn
+              icon="mdi-menu"
+              density="comfortable"
+              variant="text"
+              v-bind="props"
+            >
+            </v-btn>
+          </template>
+          <v-list>
+            <v-list-item
+              v-for="(item, index) in menuItems"
+              :key="index"
+              :value="index"
+              @click="item.action"
+            >
+              <v-list-item-title>
+                <v-icon
+                  v-if="item.icon"
+                  class="mr-2"
+                  >{{ item.icon }}</v-icon
+                >
+                <span>{{ item.title }}</span>
+              </v-list-item-title>
+            </v-list-item>
+          </v-list>
+        </v-menu>
+      </div>
+      <div class="top-bar-right">
+        <v-icon class="theme-icon">{{ isDark ? 'mdi-weather-night' : 'mdi-weather-sunny' }}</v-icon>
+        <v-switch
+          v-model="isDark"
+          hide-details
+          density="comfortable"
+          class="theme-switch ma-0 pa-0"
+        />
+        <v-btn
+          icon="mdi-github"
+          density="comfortable"
+          variant="text"
+          @click="() => {}"
+        />
+      </div>
     </div>
 
     <Toolbar
@@ -876,8 +907,30 @@ const contextMenuItems = [
 .top-bar {
   height: 48px;
   background-color: transparent;
-  // z-index: 100;
   padding: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+}
+
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-switch {
+  width: 60px;
+  margin-right: -8px !important;
+}
+
+.theme-icon {
+  opacity: 0.9;
 }
 
 .toolbar {

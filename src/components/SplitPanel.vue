@@ -114,7 +114,7 @@ onUnmounted(() => {
   .right-panel {
     flex: v-bind('props.rightWidth');
     overflow-y: auto;
-    border-left: 1px solid #ddd;
+    border-left: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
     min-width: v-bind('props.rightMinWidth');
     max-width: v-bind('props.rightMaxWidth');
   }

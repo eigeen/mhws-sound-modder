@@ -2,7 +2,7 @@
   <v-sheet
     class="status-bar"
     height="25"
-    color="grey-lighten-3"
+    color="surface"
   >
     <div class="d-flex align-center px-2">
       <span
@@ -35,6 +35,6 @@ const statusStore = useStatusStore()
   left: 0;
   right: 0;
   z-index: 100;
-  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 </style>
