@@ -4,6 +4,7 @@ import {
   open as openDialog,
   save as saveDialog,
 } from '@tauri-apps/plugin-dialog'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { useDark, useToggle } from '@vueuse/core'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
 import { computed, type Reactive, reactive, ref, toRef, watch } from 'vue'
@@ -956,7 +957,7 @@ const contextMenuItems = [
           icon="mdi-github"
           density="comfortable"
           variant="text"
-          @click="() => {}"
+          @click="() => openUrl('https://github.com/eigeen/mhws-sound-modder')"
         />
       </div>
     </div>
