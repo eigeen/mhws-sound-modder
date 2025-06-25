@@ -5,19 +5,18 @@
     color="surface"
   >
     <div class="d-flex align-center px-2">
-      <span
-        v-if="statusStore.message"
-        class="text-caption"
-        >{{ statusStore.message }}</span
-      >
       <v-progress-linear
-        v-if="statusStore.progress.current > 0"
-        :model-value="statusStore.progress.current"
-        :indeterminate="statusStore.progress.indeterminate"
+        v-if="statusStore.currentEvent?.progress"
+        :model-value="statusStore.currentEvent.progress.current"
+        :indeterminate="statusStore.currentEvent.progress.indeterminate"
         height="8"
-        class="mx-2"
+        class="progress-bar"
         color="primary"
       />
+      <span
+        v-if="statusStore.currentEvent?.message"
+        class="text-caption ms-2"
+      >{{ statusStore.currentEvent.message }}</span>
     </div>
   </v-sheet>
 </template>
@@ -36,5 +35,9 @@ const statusStore = useStatusStore()
   right: 0;
   z-index: 100;
   border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.progress-bar {
+  max-width: 200px;
 }
 </style>

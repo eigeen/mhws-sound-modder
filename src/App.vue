@@ -10,6 +10,12 @@
 <script lang="ts" setup>
 import { window } from '@tauri-apps/api'
 import { LocalDir } from './libs/localDir'
+import { useDark } from '@vueuse/core'
+import { onMounted, watch } from 'vue'
+import { useTheme } from 'vuetify'
+
+const isDark = useDark()
+const theme = useTheme()
 
 // Register onClose event
 const mainWindow = window.getCurrentWindow()
@@ -19,6 +25,16 @@ mainWindow.onCloseRequested(async () => {
     await LocalDir.clearTempDir()
   } finally {
   }
+})
+
+// 监听暗色模式变化并同步到 Vuetify 主题
+watch(isDark, (dark) => {
+  theme.global.name.value = dark ? 'dark' : 'light'
+})
+
+onMounted(() => {
+  // default to dark mode
+  isDark.value = true
 })
 </script>
 

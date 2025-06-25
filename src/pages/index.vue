@@ -18,7 +18,7 @@ import type {
   PckFile,
   ReplaceItem,
 } from '@/stores/workspace'
-import { getExtension } from '@/utils/path'
+import { getExtension, getFileStem } from '@/utils/path'
 import {
   TargetFormatList,
   Transcoder,
@@ -34,18 +34,12 @@ import { LocalDir } from '@/libs/localDir'
 import { mkdir, copyFile, exists, remove } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
 import { exportLogger } from '@/utils/logger'
-import { useTheme } from 'vuetify'
+import { useStatusStore } from '@/stores/status'
 
 const workspace = useWorkspaceStore()
 const sourceManager = SourceManager.getInstance()
 const isDark = useDark()
-const theme = useTheme()
-const toggleDark = useToggle(isDark)
-
-// 监听暗色模式变化并同步到 Vuetify 主题
-watch(isDark, (dark) => {
-  theme.global.name.value = dark ? 'dark' : 'light'
-})
+const statusStore = useStatusStore()
 
 const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
 const infoPanelRef = ref<InstanceType<typeof InfoPanel>>()
@@ -650,6 +644,7 @@ async function handleDrop(event: DropEvent) {
 }
 
 async function handleDumpAudio(uniqueId: string, format: TargetFormat) {
+  const statusId = `dump-${uniqueId}-${format}`
   try {
     const node = workspace.flattenNodeMap[uniqueId]
     if (!node) {
@@ -662,8 +657,8 @@ async function handleDumpAudio(uniqueId: string, format: TargetFormat) {
     }
 
     const sourceId = source.id
-    const outputFilePath = await source.from.transcodeSource(sourceId, format)
 
+    // request output path
     const outputPath = await saveDialog({
       filters: [
         {
@@ -673,12 +668,111 @@ async function handleDumpAudio(uniqueId: string, format: TargetFormat) {
       ],
       defaultPath: `${sourceId}.${format}`,
     })
-    if (!outputPath) return
+    if (!outputPath) {
+      return
+    }
+
+    // show status progress
+    statusStore.pushEvent({
+      id: statusId,
+      message: `Dumping Audio ${sourceId}`,
+      progress: {
+        current: 100,
+        indeterminate: true,
+      },
+    })
+
+    const outputFilePath = await source.from.transcodeSource(sourceId, format)
 
     await copyFile(outputFilePath, outputPath)
     ShowInfo(`${format} file dumped: ${outputPath}`)
   } catch (err) {
     ShowError(`Failed to dump ${format} file: ${err}`)
+  } finally {
+    statusStore.removeEvent(statusId)
+  }
+}
+
+async function handleDumpFile(filePath: string, format: TargetFormat) {
+  console.debug('handleDumpFile', filePath, format)
+
+  const file = workspace.files.find((f) => f.data.filePath === filePath)
+  if (!file) {
+    ShowError(`File not found: ${filePath}`)
+    return
+  }
+
+  const statusId = `dump-${filePath}-${format}`
+  try {
+    // request output path
+    const outputRoot = await openDialog({
+      directory: true,
+      multiple: false,
+    })
+    if (!outputRoot) return
+
+    let sourceIds: number[] = []
+    let outputDir: string
+
+    if (file.type === 'bnk') {
+      const bnk = file.data as Bnk
+      sourceIds = [...bnk.getManagedSources(), ...bnk.getUnmanagedSources()]
+      outputDir = await join(outputRoot, getFileStem(bnk.filePath))
+    } else if (file.type === 'pck') {
+      const pck = file.data as Pck
+      sourceIds = pck.header.wem_entries.map((entry) => entry.id)
+      outputDir = await join(outputRoot, getFileStem(pck.filePath))
+    } else {
+      ShowError(`Unsupported file type`)
+      return
+    }
+
+    // create output dir
+    if (!(await exists(outputDir))) {
+      await mkdir(outputDir, { recursive: true })
+    }
+
+    // show status progress
+    let finishedCount = 0
+    statusStore.pushEvent({
+      id: statusId,
+      message: `Dumping ${finishedCount} / ${sourceIds.length} sources`,
+      progress: {
+        current: (finishedCount / sourceIds.length) * 100,
+        indeterminate: false,
+      },
+    })
+    // dump all sources background
+    Promise.all(
+      sourceIds.map(async (sourceId) => {
+        const source = sourceManager.getSource(sourceId)
+        if (!source) return
+
+        const tempFilePath = await source.from.transcodeSource(sourceId, format)
+        const outputFilePath = await join(outputDir, `${sourceId}.${format}`)
+        await copyFile(tempFilePath, outputFilePath)
+
+        finishedCount++
+        statusStore.pushEvent({
+          id: statusId,
+          message: `Dumping ${finishedCount} / ${sourceIds.length} sources`,
+          progress: {
+            current: (finishedCount / sourceIds.length) * 100,
+            indeterminate: false,
+          },
+        })
+      })
+    )
+      .catch((err) => {
+        ShowError(`Failed to dump file: ${err}`)
+      })
+      .finally(() => {
+        statusStore.removeEvent(statusId)
+      })
+  } catch (err) {
+    ShowError(`Failed to dump file: ${err}`)
+  } finally {
+    statusStore.removeEvent(statusId)
   }
 }
 
@@ -763,6 +857,26 @@ const contextMenuItems = [
     action: (data: TreeNode | null) => handleDeleteNode(data as TreeNode),
   },
   {
+    show: (data: TreeNode | null) => ['bnk', 'pck'].includes(data?.type ?? ''),
+    icon: 'mdi-download',
+    label: 'Dump All .wem',
+    value: 'dump-all-wem',
+    action: async (data: TreeNode | null) => {
+      if (!data) return
+      await handleDumpFile(String(data.key), 'wem')
+    },
+  },
+  {
+    show: (data: TreeNode | null) => ['bnk', 'pck'].includes(data?.type ?? ''),
+    icon: 'mdi-transfer-down',
+    label: 'Dump All .wav',
+    value: 'dump-all-wav',
+    action: async (data: TreeNode | null) => {
+      if (!data) return
+      await handleDumpFile(String(data.key), 'wav')
+    },
+  },
+  {
     show: (data: TreeNode | null) => data?.icon === 'mdi-file-music',
     icon: 'mdi-import',
     label: 'Import Audio',
@@ -829,7 +943,9 @@ const contextMenuItems = [
         </v-menu>
       </div>
       <div class="top-bar-right">
-        <v-icon class="theme-icon">{{ isDark ? 'mdi-weather-night' : 'mdi-weather-sunny' }}</v-icon>
+        <v-icon class="theme-icon">{{
+          isDark ? 'mdi-weather-night' : 'mdi-weather-sunny'
+        }}</v-icon>
         <v-switch
           v-model="isDark"
           hide-details
