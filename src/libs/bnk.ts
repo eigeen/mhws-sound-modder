@@ -13,8 +13,17 @@ import { getFileName } from '@/utils/path'
 import { reactive, type Reactive, ref, toRef } from 'vue'
 import { SourceManager } from '@/libs/source'
 import { useWorkspaceStore } from '@/stores/workspace'
-import { exists, rename } from '@tauri-apps/plugin-fs'
+import { exists, rename, mkdir, remove, copyFile } from '@tauri-apps/plugin-fs'
 import { Transcoder, type TargetFormat } from '@/libs/transcode'
+import { LocalDir } from '@/libs/localDir'
+import { join } from '@tauri-apps/api/path'
+
+export type ReplaceItem = {
+  type: 'audio'
+  id: number | string
+  uniqueId: string
+  path: string
+}
 
 export class Bnk {
   public data: BnkData
@@ -24,6 +33,7 @@ export class Bnk {
   private segmentTree: SegmentTree | null = null
   private _managedSources: number[] = []
   private _unmanagedSources: number[] = []
+  public overrideMap: Reactive<Record<string, ReplaceItem>> = reactive({})
 
   constructor(data: BnkData) {
     this.data = data
@@ -95,6 +105,78 @@ export class Bnk {
   }
 
   /**
+   * 导出 BNK 文件到指定路径，包含音源替换处理
+   * @param exportPath 导出文件路径
+   * @param logger 可选的日志记录器
+   */
+  public async exportFile(
+    exportPath: string,
+    logger?: {
+      debug: (message: string, data?: any) => void
+      info: (message: string, data?: any) => void
+    }
+  ): Promise<void> {
+    logger?.debug(`Processing BNK file: ${this.getLabel()}`)
+
+    // 收集需要替换的音源
+    const replacedSources = Object.values(this.overrideMap)
+    logger?.debug(`Found ${replacedSources.length} audio sources to replace`, {
+      replacedSourceIds: replacedSources.map((s) => s.id),
+    })
+
+    let tempSourceDir: string | undefined
+
+    // 如果bnk包含数据，则替换音源，否则直接导出
+    if (this.hasSection('Data')) {
+      logger?.debug(
+        'BNK file contains data section, need to process audio source replacement'
+      )
+
+      logger?.info(
+        `Need to replace ${replacedSources.length} audio sources`,
+        {
+          replacedSourceIds: replacedSources.map((s) => s.id),
+        }
+      )
+
+      // 创建临时目录存放替换的音源
+      const tempDir = await LocalDir.getTempDir()
+      tempSourceDir = await join(tempDir, 'export', this.getLabel())
+      if (await exists(tempSourceDir)) {
+        await remove(tempSourceDir, { recursive: true })
+        logger?.debug('Cleaned up existing temporary directory')
+      }
+      await mkdir(tempSourceDir, { recursive: true })
+      logger?.debug(`Created temporary directory: ${tempSourceDir}`)
+
+      // 先提取所有音源
+      logger?.debug('Starting to extract BNK data')
+      await this.extractData(tempSourceDir)
+      logger?.debug('BNK data extraction completed')
+
+      // 复制替换的音源到临时目录，覆盖已提取的内容
+      for (const source of replacedSources) {
+        const sourcePath = source.path
+        const targetPath = await join(tempSourceDir, `${source.id}.wem`)
+        await copyFile(sourcePath, targetPath)
+        logger?.debug(`Replaced audio source: ${source.id}.wem`, {
+          sourcePath,
+          targetPath,
+        })
+      }
+    } else {
+      logger?.debug(
+        'BNK file does not contain data section, exporting directly'
+      )
+    }
+
+    // 保存BNK文件
+    logger?.debug('Starting to save BNK file')
+    await BnkApi.saveFile(exportPath, this.data, tempSourceDir)
+    logger?.info(`BNK file saved successfully: ${exportPath}`)
+  }
+
+  /**
    * 将指定ID的音频源转码为目标格式
    * @param sourceId 音频源ID
    * @param format 目标格式，例如 'wav'
@@ -129,7 +211,7 @@ export class Bnk {
   ): Promise<string[]> {
     const ids = sourceIds || this.getManagedSources()
     const results: string[] = []
-    
+
     for (const id of ids) {
       try {
         const path = await this.transcodeSource(id, format)

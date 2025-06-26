@@ -3,8 +3,12 @@ import type { PckHeader } from '@/models/pck'
 import { getFileName } from '@/utils/path'
 import { sha256 } from '@/utils'
 import { SourceManager } from '@/libs/source'
-import { exists, rename } from '@tauri-apps/plugin-fs'
+import { exists, rename, mkdir, remove, copyFile } from '@tauri-apps/plugin-fs'
 import { Transcoder, type TargetFormat } from '@/libs/transcode'
+import { reactive, type Reactive } from 'vue'
+import type { ReplaceItem } from '@/libs/bnk'
+import { LocalDir } from '@/libs/localDir'
+import { join } from '@tauri-apps/api/path'
 
 export class Pck {
   public header: PckHeader
@@ -12,6 +16,7 @@ export class Pck {
   public filePath: string = ''
   private _hasData: boolean
   private _label: string = ''
+  public overrideMap: Reactive<Record<string, ReplaceItem>> = reactive({})
 
   constructor(header: PckHeader, hasData: boolean) {
     this.header = header
@@ -37,6 +42,78 @@ export class Pck {
 
   public async extractData(outputDir: string): Promise<void> {
     return PckApi.extractData(this.filePath, outputDir)
+  }
+
+  /**
+   * 导出 PCK 文件到指定路径，包含音源替换处理
+   * @param exportPath 导出文件路径
+   * @param logger 可选的日志记录器
+   */
+  public async exportFile(
+    exportPath: string,
+    logger?: {
+      debug: (message: string, data?: any) => void
+      info: (message: string, data?: any) => void
+    }
+  ): Promise<void> {
+    logger?.debug(`Processing PCK file: ${this.getLabel()}`)
+
+    // 收集需要替换的音源
+    const replacedSources = Object.values(this.overrideMap)
+    logger?.debug(`Found ${replacedSources.length} audio sources to replace`, {
+      replacedSourceIds: replacedSources.map((s) => s.id),
+    })
+
+    let tempSourceDir: string | undefined
+
+    // 如果PCK包含数据，则替换音源，否则直接导出
+    if (this.hasData()) {
+      logger?.debug(
+        'PCK file contains data, need to process audio source replacement'
+      )
+
+      logger?.info(
+        `Need to replace ${replacedSources.length} audio sources`,
+        {
+          replacedSourceIds: replacedSources.map((s) => s.id),
+        }
+      )
+
+      // 创建临时目录存放替换的音源
+      const tempDir = await LocalDir.getTempDir()
+      tempSourceDir = await join(tempDir, 'export', this.getLabel())
+      if (await exists(tempSourceDir)) {
+        await remove(tempSourceDir, { recursive: true })
+        logger?.debug('Cleaned up existing temporary directory')
+      }
+      await mkdir(tempSourceDir, { recursive: true })
+      logger?.debug(`Created temporary directory: ${tempSourceDir}`)
+
+      // 先提取PCK内容
+      logger?.debug('Starting to extract PCK data')
+      await this.extractData(tempSourceDir)
+      logger?.debug('PCK data extraction completed')
+
+      // 复制替换的音源到临时目录,覆盖已提取的内容
+      for (const source of replacedSources) {
+        const sourcePath = source.path
+        const targetPath = await join(tempSourceDir, `${source.id}.wem`)
+        await copyFile(sourcePath, targetPath)
+        logger?.debug(`Replaced audio source: ${source.id}.wem`, {
+          sourcePath,
+          targetPath,
+        })
+      }
+    } else {
+      logger?.debug(
+        'PCK file does not contain data, exporting directly'
+      )
+    }
+
+    // 保存PCK文件
+    logger?.debug('Starting to save PCK file')
+    await PckApi.saveFile(this.header, exportPath, tempSourceDir)
+    logger?.info(`PCK file saved successfully: ${exportPath}`)
   }
 
   /**

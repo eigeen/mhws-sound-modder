@@ -212,7 +212,7 @@ function handleUndo() {
         // remove replace item
         const selectedKey = workspace.selectedKey
         if (selectedKey && typeof selectedKey === 'string') {
-          delete workspace.replaceList[selectedKey]
+          delete dataNode.value.belongToFile.data.overrideMap[selectedKey]
         }
         break
     }
@@ -310,7 +310,7 @@ async function tryGetReplacedAudio(): Promise<string | null> {
   const selectedKey = workspace.selectedKey
   if (!selectedKey || typeof selectedKey !== 'string') return null
 
-  const replaceItem = workspace.replaceList[selectedKey]
+  const replaceItem = dataNode.value?.belongToFile.data.overrideMap[selectedKey]
   if (!replaceItem) return null
 
   const wemFilePath = replaceItem.path
@@ -355,7 +355,7 @@ async function fetchReplacedAudio(): Promise<string> {
       throw new Error('selectedKey not found or not a string')
     }
 
-    const replaceItem = workspace.replaceList[selectedKey]
+    const replaceItem = dataNode.value?.belongToFile.data.overrideMap[selectedKey]
     if (!replaceItem) {
       throw new Error('replace item not found in workspace.replaceList')
     }

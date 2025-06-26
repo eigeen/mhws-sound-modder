@@ -14,6 +14,7 @@ import {
   watch,
 } from 'vue'
 import type { LoudnessInfo } from '@/api/tauri'
+import type { ReplaceItem } from '@/libs/bnk'
 
 type FlattenNodeMap = { [key: string]: DataNode }
 type WorkspaceFile = BnkFile | PckFile
@@ -45,13 +46,6 @@ export interface DataNode {
   parent: Reactive<DataNode> | null
   dirty: boolean
   belongToFile: Reactive<WorkspaceFile>
-}
-
-export type ReplaceItem = {
-  type: 'audio'
-  id: number | string
-  uniqueId: string
-  path: string
 }
 
 /**
@@ -116,8 +110,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const selectedKey = ref<string | number | null>(null)
   // Flatten map of all nodes in the files
   const flattenNodeMap = ref<FlattenNodeMap>({})
-  // Replace list, to replace audio data. key: unique id
-  const replaceList = ref<Record<string, ReplaceItem>>({})
   // Loudness cache, key: audio file path
   const loudnessCache = ref<Record<string, LoudnessInfo>>({})
 
@@ -160,7 +152,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
                 const uniqueId = item.id
                 const dirty = computed(() => {
-                  const replaceItem = replaceList.value[uniqueId]
+                  const replaceItem = file.data.overrideMap[uniqueId]
                   return replaceItem !== undefined
                 }) as unknown as boolean
                 const node = reactive<DataNode>({
@@ -197,7 +189,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           unmanagedIds.forEach((elementId) => {
             const uniqueId = `${file.data.getLabel()}-${elementId}`
             const dirty = computed(() => {
-              const replaceItem = replaceList.value[uniqueId]
+              const replaceItem = file.data.overrideMap[uniqueId]
               return replaceItem !== undefined
             }) as unknown as boolean
             if (!flatten[uniqueId]) {
@@ -232,7 +224,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           file.data.header.wem_entries.forEach((entry) => {
             const uniqueId = `${file.data.getLabel()}-${entry.id}`
             const dirty = computed(() => {
-              const replaceItem = replaceList.value[uniqueId]
+              const replaceItem = file.data.overrideMap[uniqueId]
               return replaceItem !== undefined
             }) as unknown as boolean
             flatten[uniqueId] = reactive({
@@ -282,7 +274,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     files,
     selectedKey,
     flattenNodeMap,
-    replaceList,
     loudnessCache,
     removeFile,
   }
