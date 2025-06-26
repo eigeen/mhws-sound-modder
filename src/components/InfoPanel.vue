@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import type { MusicSegmentNode, MusicTrackNode, PlayListItem } from '@/libs/bnk'
-import { SourceManager } from '@/libs/source'
+import { SourceManager, type SourceInfo } from '@/libs/source'
 import { Transcoder } from '@/libs/transcode'
 import { useWorkspaceStore } from '@/stores/workspace'
 import type { DataNode, DataNodePayload } from '@/stores/workspace'
@@ -49,43 +49,6 @@ const sourceManager = SourceManager.getInstance()
 
 let ignoreNextChange = false
 
-/**
- * 从缓存更新响度信息
- */
-async function updateLoudnessInfoFromCache(audioPath: string) {
-  const cachedInfo = workspace.loudnessCache[audioPath]
-  if (cachedInfo) {
-    if (dataNode.value?.dirty) {
-      loudnessInfo.replaced = cachedInfo
-    } else {
-      loudnessInfo.original = cachedInfo
-    }
-    return true
-  }
-  return false
-}
-
-/**
- * 获取并缓存响度信息
- */
-async function fetchAndCacheLoudnessInfo(audioPath: string) {
-  try {
-    const info = await getLoudnessInfo(audioPath)
-    // 更新缓存
-    workspace.loudnessCache[audioPath] = info
-    // 更新显示
-    if (dataNode.value?.dirty) {
-      loudnessInfo.replaced = info
-    } else {
-      loudnessInfo.original = info
-    }
-    return true
-  } catch (err) {
-    console.error('Failed to get loudness info:', err)
-    return false
-  }
-}
-
 watch(
   () => data.value,
   async (oldVal, newVal) => {
@@ -110,12 +73,12 @@ watch(
             // 先停止当前播放
             audioPlayerRef.value?.stop()
 
-            const audioPath = await tryGetPlaybackAudio(data.value.id)
+            const audioPath = await tryGetOriginalAudio()
             if (audioPath) {
               console.debug('Audio player update source', audioPath)
               currentAudioSrc.value = convertFileSrc(audioPath)
-              // 尝试从缓存获取响度信息
-              await updateLoudnessInfoFromCache(audioPath)
+              // 更新响度信息
+              await updateLoudnessInfo()
             } else {
               currentAudioSrc.value = ''
             }
@@ -266,6 +229,59 @@ function handleUndo() {
   }
 }
 
+/**
+ * 如果不存在，则获取并缓存响度信息，否则使用缓存
+ */
+async function updateLoudnessInfo() {
+  try {
+    if (!data.value) return
+
+    const dataId = data.value.id
+    console.debug('updateLoudnessInfo')
+    // original audio path
+    const originalPath = await tryGetOriginalAudio()
+    if (originalPath) {
+      const cachedInfo = workspace.loudnessCache[originalPath]
+      if (cachedInfo) {
+        loudnessInfo.original = cachedInfo
+      } else {
+        // calculate original loudness info
+        console.debug('calculate original loudness info')
+        // background calculate
+        getLoudnessInfo(originalPath).then((info) => {
+          workspace.loudnessCache[originalPath] = info
+          // data changed, don't update current
+          if (dataId === data.value?.id) {
+            loudnessInfo.original = info
+          }
+        })
+      }
+    }
+
+    // replaced audio path
+    const replacedPath = await tryGetReplacedAudio()
+    if (replacedPath) {
+      const cachedInfo = workspace.loudnessCache[replacedPath]
+      if (cachedInfo) {
+        loudnessInfo.replaced = cachedInfo
+      } else {
+        // calculate replaced loudness info
+        console.debug('calculate replaced loudness info')
+        // background calculate
+        getLoudnessInfo(replacedPath).then((info) => {
+          workspace.loudnessCache[replacedPath] = info
+          // data changed, don't update current
+          if (dataId === data.value?.id) {
+            loudnessInfo.replaced = info
+          }
+        })
+      }
+    }
+  } catch (err) {
+    ShowError(`Failed to get loudness info: ${err}`)
+  }
+}
+
 async function tryGetPlaybackAudio(id: number): Promise<string | null> {
   try {
     const wemFilePath = await sourceManager.getSourceFilePath(id)
@@ -283,29 +299,55 @@ async function tryGetPlaybackAudio(id: number): Promise<string | null> {
   }
 }
 
+async function tryGetOriginalAudio(): Promise<string | null> {
+  if (!data.value) return null
+
+  return tryGetPlaybackAudio(data.value.id)
+}
+
+async function tryGetReplacedAudio(): Promise<string | null> {
+  // 需要找到当前节点的唯一ID
+  const selectedKey = workspace.selectedKey
+  if (!selectedKey || typeof selectedKey !== 'string') return null
+
+  const replaceItem = workspace.replaceList[selectedKey]
+  if (!replaceItem) return null
+
+  const wemFilePath = replaceItem.path
+  const wavFilePath = wemFilePath.replace('.wem', '.wav')
+  if (await exists(wavFilePath)) {
+    return wavFilePath
+  }
+
+  return null
+}
+
 /**
- * Get playable audio file by id.
+ * Get original playable audio file path by id.
  * @returns File path
  */
-async function fetchPlaybackAudio(id: number): Promise<string> {
+async function fetchOriginalAudio(): Promise<string> {
   try {
-    const source = sourceManager.getSource(id)
+    if (!data.value) {
+      throw new Error('data.value not found')
+    }
+
+    const source = sourceManager.getSource(data.value.id)
     if (!source) {
       throw new Error('Source not found in SourceManager.')
     }
 
-    // 根据来源类型调用相应的转码方法
-    if (source.fromType === 'bnk') {
-      return await source.from.transcodeSource(id, 'wav')
-    } else {
-      return await source.from.transcodeSource(id, 'wav')
-    }
+    return await source.from.transcodeSource(data.value.id, 'wav')
   } catch (err) {
     throw new Error(`Failed to fetch playback audio: ${err}`)
   }
 }
 
-async function fetchReplacedAudio(_id: number): Promise<string> {
+/**
+ * Get replaced playable audio file path by id.
+ * @returns File path
+ */
+async function fetchReplacedAudio(): Promise<string> {
   try {
     // 需要找到当前节点的唯一ID
     const selectedKey = workspace.selectedKey
@@ -350,8 +392,8 @@ async function handlePlayback() {
 
     // if imported, play replaced audio, otherwise play original
     const audioPath = dataNode.value!.dirty
-      ? await fetchReplacedAudio(data.value.id)
-      : await fetchPlaybackAudio(data.value.id)
+      ? await fetchReplacedAudio()
+      : await fetchOriginalAudio()
 
     // 设置新的音频源
     currentAudioSrc.value = convertFileSrc(audioPath)
@@ -363,10 +405,8 @@ async function handlePlayback() {
     audioPlayerRef.value?.reset()
     await audioPlayerRef.value?.play()
 
-    // 获取响度信息（优先从缓存获取）
-    if (!(await updateLoudnessInfoFromCache(audioPath))) {
-      await fetchAndCacheLoudnessInfo(audioPath)
-    }
+    // 更新获取响度信息（优先从缓存获取）
+    await updateLoudnessInfo()
   } catch (err) {
     ShowError(`Failed to play audio: ${err}`)
   }
@@ -381,7 +421,7 @@ async function handlePlayOriginal() {
     // 先停止当前播放
     audioPlayerRef.value?.stop()
 
-    const audioPath = await fetchPlaybackAudio(data.value.id)
+    const audioPath = await fetchOriginalAudio()
 
     // 设置新的音频源
     currentAudioSrc.value = convertFileSrc(audioPath)
@@ -393,10 +433,8 @@ async function handlePlayOriginal() {
     audioPlayerRef.value?.reset()
     await audioPlayerRef.value?.play()
 
-    // 获取响度信息（优先从缓存获取）
-    if (!(await updateLoudnessInfoFromCache(audioPath))) {
-      await fetchAndCacheLoudnessInfo(audioPath)
-    }
+    // 更新响度信息
+    await updateLoudnessInfo()
   } catch (err) {
     ShowError(`Failed to play original: ${err}`)
   }
@@ -539,7 +577,7 @@ onUnmounted(() => {
       </div>
       <div v-if="loudnessInfo.replaced">
         <span
-          >Original Loudness | Peak (dBFS):
+          >Replaced Loudness | Peak (dBFS):
           {{ loudnessInfo.replaced.peakDB.toFixed(1) }}
           | LUFS: {{ loudnessInfo.replaced.lufs?.toFixed(1) }}</span
         >

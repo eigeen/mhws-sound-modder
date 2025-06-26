@@ -833,6 +833,14 @@ const menuItems = [
   { title: 'Export', icon: 'mdi-export', action: handleExport },
 ]
 
+interface ContextMenuItem {
+  show: (data: TreeNode | null) => boolean
+  icon: string
+  label: string
+  value: string
+  action: (data: TreeNode | null) => void
+}
+
 // 右键菜单项数据驱动配置
 const contextMenuItems = [
   {
@@ -989,8 +997,8 @@ const contextMenuItems = [
             <template v-slot:contextmenu="props">
               <v-list density="compact">
                 <v-list-item
-                  v-for="(item, index) in contextMenuItems.filter((item) =>
-                    item.show(props.data)
+                  v-for="(item, index) in contextMenuItems.filter(
+                    (item: ContextMenuItem) => item.show(props.data)
                   )"
                   :key="item.value"
                   :value="item.value"

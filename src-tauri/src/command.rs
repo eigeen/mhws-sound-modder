@@ -335,7 +335,7 @@ pub fn transcode_auto_transcode(
 }
 
 #[tauri::command]
-pub fn loudness_get_info(path: &str) -> Result<LoudnessInfo, String> {
+pub async fn loudness_get_info(path: &str) -> Result<LoudnessInfo, String> {
     map_result(|| Ok(loudness::get_loadness_info(path)?))
 }
 
