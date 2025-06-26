@@ -9,6 +9,7 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { exists, rename } from '@tauri-apps/plugin-fs'
 import { computed, ref, watch, onUnmounted, reactive } from 'vue'
 import AudioPlayer from './AudioPlayer.vue'
+import { getLoudnessInfo, type LoudnessInfo } from '@/api/tauri'
 
 const dataNode = defineModel<DataNode | null>({ required: true })
 
@@ -18,6 +19,10 @@ const data = computed<DataNodePayload | null>(() => {
 
 const audioPlayerRef = ref<InstanceType<typeof AudioPlayer> | null>(null)
 const currentAudioSrc = ref('')
+const loudnessInfo = reactive({
+  original: null as LoudnessInfo | null,
+  replaced: null as LoudnessInfo | null,
+})
 
 defineExpose({
   playAudio: async function (source?: string) {
@@ -44,6 +49,43 @@ const sourceManager = SourceManager.getInstance()
 
 let ignoreNextChange = false
 
+/**
+ * 从缓存更新响度信息
+ */
+async function updateLoudnessInfoFromCache(audioPath: string) {
+  const cachedInfo = workspace.loudnessCache[audioPath]
+  if (cachedInfo) {
+    if (dataNode.value?.dirty) {
+      loudnessInfo.replaced = cachedInfo
+    } else {
+      loudnessInfo.original = cachedInfo
+    }
+    return true
+  }
+  return false
+}
+
+/**
+ * 获取并缓存响度信息
+ */
+async function fetchAndCacheLoudnessInfo(audioPath: string) {
+  try {
+    const info = await getLoudnessInfo(audioPath)
+    // 更新缓存
+    workspace.loudnessCache[audioPath] = info
+    // 更新显示
+    if (dataNode.value?.dirty) {
+      loudnessInfo.replaced = info
+    } else {
+      loudnessInfo.original = info
+    }
+    return true
+  } catch (err) {
+    console.error('Failed to get loudness info:', err)
+    return false
+  }
+}
+
 watch(
   () => data.value,
   async (oldVal, newVal) => {
@@ -56,6 +98,10 @@ watch(
       // if id changed, user may changed the selected node
       if (oldVal?.id !== newVal?.id) {
         console.debug('Selected node changed', dataNode.value)
+        // 清空响度信息
+        loudnessInfo.original = null
+        loudnessInfo.replaced = null
+
         if (data.value?.type === 'MusicTrack') {
           listSelected.value = [data.value.playlist[0]]
         } else if (data.value?.type === 'Source') {
@@ -68,6 +114,8 @@ watch(
             if (audioPath) {
               console.debug('Audio player update source', audioPath)
               currentAudioSrc.value = convertFileSrc(audioPath)
+              // 尝试从缓存获取响度信息
+              await updateLoudnessInfoFromCache(audioPath)
             } else {
               currentAudioSrc.value = ''
             }
@@ -314,6 +362,11 @@ async function handlePlayback() {
     // 重置并播放
     audioPlayerRef.value?.reset()
     await audioPlayerRef.value?.play()
+
+    // 获取响度信息（优先从缓存获取）
+    if (!(await updateLoudnessInfoFromCache(audioPath))) {
+      await fetchAndCacheLoudnessInfo(audioPath)
+    }
   } catch (err) {
     ShowError(`Failed to play audio: ${err}`)
   }
@@ -339,6 +392,11 @@ async function handlePlayOriginal() {
     // 重置并播放
     audioPlayerRef.value?.reset()
     await audioPlayerRef.value?.play()
+
+    // 获取响度信息（优先从缓存获取）
+    if (!(await updateLoudnessInfoFromCache(audioPath))) {
+      await fetchAndCacheLoudnessInfo(audioPath)
+    }
   } catch (err) {
     ShowError(`Failed to play original: ${err}`)
   }
@@ -471,6 +529,21 @@ onUnmounted(() => {
         ref="audioPlayerRef"
         :src="currentAudioSrc"
       />
+      <!-- Loudness Info -->
+      <div v-if="loudnessInfo.original">
+        <span
+          >Original Loudness | Peak (dBFS):
+          {{ loudnessInfo.original.peakDB.toFixed(1) }}
+          | LUFS: {{ loudnessInfo.original.lufs?.toFixed(1) }}</span
+        >
+      </div>
+      <div v-if="loudnessInfo.replaced">
+        <span
+          >Original Loudness | Peak (dBFS):
+          {{ loudnessInfo.replaced.peakDB.toFixed(1) }}
+          | LUFS: {{ loudnessInfo.replaced.lufs?.toFixed(1) }}</span
+        >
+      </div>
       <span class="trailing-row"
         >Source from: {{ sourceManager.getSource(data.id)?.from.name }}</span
       >

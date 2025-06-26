@@ -10,7 +10,10 @@ use re_sound::bnk::SectionPayload;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::service::TranscodeService;
+use crate::{
+    loudness::{self, LoudnessInfo},
+    service::TranscodeService,
+};
 
 fn map_result<F, V>(f: F) -> std::result::Result<V, String>
 where
@@ -329,6 +332,11 @@ pub fn transcode_auto_transcode(
     output: &str,
 ) -> Result<(), String> {
     map_result(|| service.auto_transcode(input, output))
+}
+
+#[tauri::command]
+pub fn loudness_get_info(path: &str) -> Result<LoudnessInfo, String> {
+    map_result(|| Ok(loudness::get_loadness_info(path)?))
 }
 
 fn update_bnk_data(bnk: &mut re_sound::bnk::Bnk, wem_files: &[PathBuf]) -> eyre::Result<()> {

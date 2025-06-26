@@ -3,6 +3,16 @@ import type { PckHeader } from '@/models/pck'
 import { stringToU32LE } from '@/utils'
 import { invoke } from '@tauri-apps/api/core'
 
+export interface PckBasicData {
+  header: PckHeader
+  hasData: boolean
+}
+
+export interface LoudnessInfo {
+  peakDB: number
+  lufs?: number
+}
+
 export class BnkApi {
   public static async loadFile(
     path: string,
@@ -35,11 +45,6 @@ export class BnkApi {
   }
 }
 
-export interface PckBasicData {
-  header: PckHeader
-  hasData: boolean
-}
-
 export class PckApi {
   public static async loadBasicData(path: string): Promise<PckBasicData> {
     return invoke('pck_load_basic_data', { path })
@@ -67,6 +72,10 @@ export async function getExePath(): Promise<string> {
 
 export async function envGetVar(name: string): Promise<string | null> {
   return invoke('env_get_var', { name })
+}
+
+export async function getLoudnessInfo(path: string): Promise<LoudnessInfo> {
+  return invoke('loudness_get_info', { path })
 }
 
 export class Transcode {

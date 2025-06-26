@@ -583,6 +583,7 @@ async function importAudio(uniqueId: string, filePath: string) {
 
   // check if file is audio file
   const ext = getExtension(filePath)
+  console.debug('ext', ext, AUDIO_EXTS[ext!])
   if (!ext || !AUDIO_EXTS[ext]) {
     ShowError(`Unsupported file type: ${ext ?? '<no extension>'}`)
     return

@@ -1,9 +1,9 @@
 mod command;
 mod event;
 mod logger;
+mod loudness;
 mod service;
 mod subprocess;
-// mod transcode;
 
 use std::sync::OnceLock;
 
@@ -55,6 +55,7 @@ pub fn run() {
             command::transcode_auto_detect_paths,
             command::transcode_check,
             command::transcode_auto_transcode,
+            command::loudness_get_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

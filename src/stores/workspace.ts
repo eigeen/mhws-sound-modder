@@ -13,6 +13,7 @@ import {
   unref,
   watch,
 } from 'vue'
+import type { LoudnessInfo } from '@/api/tauri'
 
 type FlattenNodeMap = { [key: string]: DataNode }
 type WorkspaceFile = BnkFile | PckFile
@@ -117,6 +118,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const flattenNodeMap = ref<FlattenNodeMap>({})
   // Replace list, to replace audio data. key: unique id
   const replaceList = ref<Record<string, ReplaceItem>>({})
+  // Loudness cache, key: audio file path
+  const loudnessCache = ref<Record<string, LoudnessInfo>>({})
 
   // Shallow watch files changes
   watch(
@@ -280,6 +283,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     selectedKey,
     flattenNodeMap,
     replaceList,
+    loudnessCache,
     removeFile,
   }
 })
