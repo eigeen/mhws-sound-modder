@@ -23,6 +23,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.cursor/*
 
+# dist, build files or test files
 test_files/
 dist-app/

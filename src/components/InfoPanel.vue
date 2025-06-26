@@ -571,15 +571,15 @@ onUnmounted(() => {
       <div v-if="loudnessInfo.original">
         <span
           >Original Loudness | Peak (dBFS):
-          {{ loudnessInfo.original.peakDB.toFixed(1) }}
-          | LUFS: {{ loudnessInfo.original.lufs?.toFixed(1) }}</span
+          {{ loudnessInfo.original.peakDB?.toFixed(1) || 'N/A' }}
+          | LUFS: {{ loudnessInfo.original.lufs?.toFixed(1) || 'N/A' }}</span
         >
       </div>
       <div v-if="loudnessInfo.replaced">
         <span
           >Replaced Loudness | Peak (dBFS):
-          {{ loudnessInfo.replaced.peakDB.toFixed(1) }}
-          | LUFS: {{ loudnessInfo.replaced.lufs?.toFixed(1) }}</span
+          {{ loudnessInfo.replaced.peakDB?.toFixed(1) || 'N/A' }}
+          | LUFS: {{ loudnessInfo.replaced.lufs?.toFixed(1) || 'N/A' }}</span
         >
       </div>
       <span class="trailing-row"
