@@ -14,7 +14,7 @@ import {
   watch,
 } from 'vue'
 import type { LoudnessInfo } from '@/api/tauri'
-import type { ReplaceItem } from '@/libs/bnk'
+import type { OverrideSource } from '@/libs/bnk'
 
 type FlattenNodeMap = { [key: string]: DataNode }
 type WorkspaceFile = BnkFile | PckFile
@@ -152,7 +152,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
                 const uniqueId = item.id
                 const dirty = computed(() => {
-                  const replaceItem = file.data.overrideMap[uniqueId]
+                  const replaceItem = file.data.overrideMap[item.element_id]
                   return replaceItem !== undefined
                 }) as unknown as boolean
                 const node = reactive<DataNode>({
@@ -189,7 +189,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           unmanagedIds.forEach((elementId) => {
             const uniqueId = `${file.data.getLabel()}-${elementId}`
             const dirty = computed(() => {
-              const replaceItem = file.data.overrideMap[uniqueId]
+              const replaceItem = file.data.overrideMap[elementId]
               return replaceItem !== undefined
             }) as unknown as boolean
             if (!flatten[uniqueId]) {
@@ -218,13 +218,42 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           Object.entries(flatten).forEach(([key, value]) => {
             entries[key] = value
           })
+
+          // 添加 overrideMap 中的新增音频到 flattenNodeMap
+          Object.entries(file.data.overrideMap).forEach(([sourceIdStr, replaceItem]) => {
+            const sourceId = Number(sourceIdStr)
+            const uniqueId = `${file.data.getLabel()}-${sourceId}`
+            if (!entries[uniqueId]) {
+              // 这是一个新增的音频，需要创建对应的节点
+              const dirty = true // 新增音频默认为dirty
+              entries[uniqueId] = reactive({
+                data: reactive({
+                  type: 'Source',
+                  id: sourceId,
+                }),
+                defaultData: {
+                  type: 'Source',
+                  id: sourceId,
+                },
+                parent: null,
+                dirty,
+                belongToFile: file,
+              })
+              sourceManager.addSource({
+                id: sourceId,
+                fromType: 'bnk',
+                from: file.data as Bnk,
+                dirty,
+              })
+            }
+          })
         } else if (file.type === 'pck') {
           const flatten: FlattenNodeMap = {}
 
           file.data.header.wem_entries.forEach((entry) => {
             const uniqueId = `${file.data.getLabel()}-${entry.id}`
             const dirty = computed(() => {
-              const replaceItem = file.data.overrideMap[uniqueId]
+              const replaceItem = file.data.overrideMap[entry.id]
               return replaceItem !== undefined
             }) as unknown as boolean
             flatten[uniqueId] = reactive({
@@ -251,12 +280,124 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           Object.entries(flatten).forEach(([key, value]) => {
             entries[key] = value
           })
+
+          // 添加 overrideMap 中的新增音频到 flattenNodeMap
+          Object.entries(file.data.overrideMap).forEach(([sourceIdStr, replaceItem]) => {
+            const sourceId = Number(sourceIdStr)
+            const uniqueId = `${file.data.getLabel()}-${sourceId}`
+            if (!entries[uniqueId]) {
+              // 这是一个新增的音频，需要创建对应的节点
+              const dirty = true // 新增音频默认为dirty
+              entries[uniqueId] = reactive({
+                data: reactive({
+                  type: 'Source',
+                  id: sourceId,
+                }),
+                defaultData: {
+                  type: 'Source',
+                  id: sourceId,
+                },
+                parent: null,
+                dirty,
+                belongToFile: file,
+              })
+              sourceManager.addSource({
+                id: sourceId,
+                fromType: 'pck',
+                from: file.data as Pck,
+                dirty,
+              })
+            }
+          })
         }
       })
       flattenNodeMap.value = entries
       console.debug('flatten map updated')
     },
     { deep: false }
+  )
+
+  // 单独监听 overrideMap 的变化，更新 flattenNodeMap
+  watch(
+    () => files.value.map(file => file.data.overrideMap),
+    (newOverrideMaps, oldOverrideMaps) => {
+      console.debug('overrideMap changed, updating flattenNodeMap')
+      const sourceManager = SourceManager.getInstance()
+
+      // 处理添加和删除的音频源
+      files.value.forEach((file, fileIndex) => {
+        const newOverrideMap = newOverrideMaps[fileIndex] || {}
+        const oldOverrideMap = oldOverrideMaps?.[fileIndex] || {}
+
+        const label = file.type === 'bnk'
+          ? (file.data as Bnk).getLabel()
+          : (file.data as Pck).getLabel()
+
+        // 处理新增的音频源
+        Object.entries(newOverrideMap).forEach(([sourceIdStr, replaceItem]) => {
+          const sourceId = Number(sourceIdStr)
+          const uniqueId = `${label}-${sourceId}`
+
+          if (!flattenNodeMap.value[uniqueId]) {
+            // 这是一个新增的音频，需要创建对应的节点
+            const dirty = true // 新增音频默认为dirty
+            flattenNodeMap.value[uniqueId] = reactive({
+              data: reactive({
+                type: 'Source',
+                id: sourceId,
+              }),
+              defaultData: {
+                type: 'Source',
+                id: sourceId,
+              },
+              parent: null,
+              dirty,
+              belongToFile: file,
+            })
+
+            if (file.type === 'bnk') {
+              sourceManager.addSource({
+                id: sourceId,
+                fromType: 'bnk',
+                from: file.data as Bnk,
+                dirty,
+              })
+            } else {
+              sourceManager.addSource({
+                id: sourceId,
+                fromType: 'pck',
+                from: file.data as Pck,
+                dirty,
+              })
+            }
+          }
+        })
+
+        // 处理删除的音频源
+        Object.keys(oldOverrideMap).forEach((sourceIdStr) => {
+          const sourceId = Number(sourceIdStr)
+          const uniqueId = `${label}-${sourceId}`
+
+          // 如果旧的存在但新的不存在，说明被删除了
+          if (!(sourceIdStr in newOverrideMap)) {
+            // 检查这个音频源是否是纯粹由override添加的（不是原有音频源的替换）
+            const managedSources = file.type === 'bnk' ? (file.data as Bnk).getManagedSources() : []
+            const unmanagedSources = file.type === 'bnk' ? (file.data as Bnk).getUnmanagedSources() : []
+            const pckSources = file.type === 'pck' ? (file.data as Pck).header.wem_entries.map(e => e.id) : []
+            const existingSources = [...managedSources, ...unmanagedSources, ...pckSources]
+
+            if (!existingSources.includes(sourceId)) {
+              // 这是一个纯粹的新增音频源，需要从flattenNodeMap中删除
+              delete flattenNodeMap.value[uniqueId]
+              // 同时从SourceManager中删除
+              sourceManager.removeSource(sourceId, file.data.filePath)
+              console.debug(`Removed override audio source ${sourceId} from flattenNodeMap and SourceManager`)
+            }
+          }
+        })
+      })
+    },
+    { deep: true } // 这里需要 deep，但只监听 overrideMap
   )
 
   const removeFile = (filePath: string): boolean => {

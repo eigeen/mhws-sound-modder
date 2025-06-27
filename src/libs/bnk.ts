@@ -1,5 +1,11 @@
 import { BnkApi } from '@/api/tauri'
-import type { BnkData, DidxSection, Section } from '@/models/bnk'
+import type {
+  BnkData,
+  DataSection,
+  DidxEntry,
+  DidxSection,
+  Section,
+} from '@/models/bnk'
 import type {
   HircEntry,
   HircEventEntry,
@@ -9,7 +15,7 @@ import type {
   HircSoundEntry,
 } from '@/models/bnk/hirc'
 import { sha256 } from '@/utils'
-import { getFileName } from '@/utils/path'
+import { getExtension, getFileName } from '@/utils/path'
 import { reactive, type Reactive, ref, toRef } from 'vue'
 import { SourceManager } from '@/libs/source'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -17,11 +23,10 @@ import { exists, rename, mkdir, remove, copyFile } from '@tauri-apps/plugin-fs'
 import { Transcoder, type TargetFormat } from '@/libs/transcode'
 import { LocalDir } from '@/libs/localDir'
 import { join } from '@tauri-apps/api/path'
+import { v4 as uuidv4 } from 'uuid'
 
-export type ReplaceItem = {
-  type: 'audio'
-  id: number | string
-  uniqueId: string
+export type OverrideSource = {
+  id: number
   path: string
 }
 
@@ -29,11 +34,12 @@ export class Bnk {
   public data: BnkData
   public name: string = ''
   public filePath: string = ''
+  public overrideMap: Reactive<Record<number, OverrideSource>> = reactive({})
   private _label: string = ''
   private segmentTree: SegmentTree | null = null
   private _managedSources: number[] = []
   private _unmanagedSources: number[] = []
-  public overrideMap: Reactive<Record<string, ReplaceItem>> = reactive({})
+  private workspace = useWorkspaceStore()
 
   constructor(data: BnkData) {
     this.data = data
@@ -124,20 +130,22 @@ export class Bnk {
       replacedSourceIds: replacedSources.map((s) => s.id),
     })
 
+    // 在导出时处理DIDX section
+    if (replacedSources.length > 0) {
+      this.updateDidxForExport(replacedSources, logger)
+    }
+
     let tempSourceDir: string | undefined
 
-    // 如果bnk包含数据，则替换音源，否则直接导出
-    if (this.hasSection('Data')) {
+    // 如果bnk包含数据或者有新增的音频源，则需要处理音源数据
+    if (this.hasSection('Data') || replacedSources.length > 0) {
       logger?.debug(
-        'BNK file contains data section, need to process audio source replacement'
+        'BNK file contains data section or has new audio sources, need to process audio source replacement'
       )
 
-      logger?.info(
-        `Need to replace ${replacedSources.length} audio sources`,
-        {
-          replacedSourceIds: replacedSources.map((s) => s.id),
-        }
-      )
+      logger?.info(`Need to process ${replacedSources.length} audio sources`, {
+        replacedSourceIds: replacedSources.map((s) => s.id),
+      })
 
       // 创建临时目录存放替换的音源
       const tempDir = await LocalDir.getTempDir()
@@ -149,24 +157,26 @@ export class Bnk {
       await mkdir(tempSourceDir, { recursive: true })
       logger?.debug(`Created temporary directory: ${tempSourceDir}`)
 
-      // 先提取所有音源
-      logger?.debug('Starting to extract BNK data')
-      await this.extractData(tempSourceDir)
-      logger?.debug('BNK data extraction completed')
+      // 如果原本有数据，先提取所有音源
+      if (this.hasSection('Data')) {
+        logger?.debug('Starting to extract BNK data')
+        await this.extractData(tempSourceDir)
+        logger?.debug('BNK data extraction completed')
+      }
 
-      // 复制替换的音源到临时目录，覆盖已提取的内容
+      // 复制替换/新增的音源到临时目录
       for (const source of replacedSources) {
         const sourcePath = source.path
         const targetPath = await join(tempSourceDir, `${source.id}.wem`)
         await copyFile(sourcePath, targetPath)
-        logger?.debug(`Replaced audio source: ${source.id}.wem`, {
+        logger?.debug(`Processed audio source: ${source.id}.wem`, {
           sourcePath,
           targetPath,
         })
       }
     } else {
       logger?.debug(
-        'BNK file does not contain data section, exporting directly'
+        'BNK file does not contain data section and no new audio sources, exporting directly'
       )
     }
 
@@ -177,13 +187,91 @@ export class Bnk {
   }
 
   /**
+   * 在导出时更新DIDX section以包含新增的音频源
+   * @param replacedSources 替换的音频源列表
+   * @param logger 可选的日志记录器
+   */
+  private updateDidxForExport(
+    replacedSources: OverrideSource[],
+    logger?: {
+      debug: (message: string, data?: any) => void
+      info: (message: string, data?: any) => void
+    }
+  ): void {
+    // 确保DIDX section存在
+    let didx = this.getDidxSection()
+    if (!didx) {
+      logger?.debug('Creating new DIDX section')
+      didx = {
+        type: 'Didx',
+        magic: [68, 73, 68, 88], // "DIDX"
+        section_length: 0, // 将在保存时计算
+        entries: [],
+      } as DidxSection
+      this.data.sections.push(didx)
+    }
+
+    // 确保Data section存在（如果有新增音频源）
+    if (!this.hasSection('Data')) {
+      logger?.debug('Creating new DATA section')
+      this.data.sections.push({
+        type: 'Data',
+        magic: [68, 65, 84, 65], // "DATA"
+        section_length: 0, // 将在保存时计算
+        data_list: [],
+      } as DataSection)
+    }
+
+    // 获取现有音频源ID
+    const managedSources = this.getManagedSources()
+    const unmanagedSources = this.getUnmanagedSources()
+    const existingSources = [...managedSources, ...unmanagedSources]
+
+    // 为新增的音频源添加DIDX条目
+    for (const source of replacedSources) {
+      const existingEntryIndex = didx.entries.findIndex(
+        (entry) => entry.id === source.id
+      )
+
+      if (existingEntryIndex >= 0) {
+        // 如果已存在，更新现有条目（用于替换现有音频源）
+        logger?.debug(`Updating existing DIDX entry for source ${source.id}`)
+        didx.entries[existingEntryIndex] = {
+          id: source.id,
+          offset: 0, // 偏移量将在保存时由后端计算
+          length: 0, // 长度将在保存时由后端计算
+        }
+      } else if (!existingSources.includes(source.id)) {
+        // 如果不存在且不是原有音频源，添加新条目（用于新增音频源）
+        logger?.debug(`Adding new DIDX entry for source ${source.id}`)
+        didx.entries.push({
+          id: source.id,
+          offset: 0, // 偏移量将在保存时由后端计算
+          length: 0, // 长度将在保存时由后端计算
+        })
+      } else {
+        // 如果是替换现有音频源但DIDX中没有条目，说明可能是管理的音频源
+        logger?.debug(
+          `Source ${source.id} is a managed source, no DIDX entry needed`
+        )
+      }
+    }
+
+    logger?.debug(`DIDX section updated with ${didx.entries.length} entries`)
+  }
+
+  /**
    * 将指定ID的音频源转码为目标格式
    * @param sourceId 音频源ID
    * @param format 目标格式，例如 'wav'
    * @returns 转码后的文件路径
    */
-  public async transcodeSource(sourceId: number, format: TargetFormat): Promise<string> {
-    const wemFilePath = await SourceManager.getInstance().getSourceFilePath(sourceId)
+  public async transcodeSource(
+    sourceId: number,
+    format: TargetFormat
+  ): Promise<string> {
+    const wemFilePath =
+      await SourceManager.getInstance().getSourceFilePath(sourceId)
     if (!wemFilePath) {
       throw new Error(`Source ID ${sourceId} not found in SourceManager.`)
     }
@@ -194,7 +282,10 @@ export class Bnk {
     }
 
     // 转码
-    const tempPath = await Transcoder.getInstance().transcode(wemFilePath, format)
+    const tempPath = await Transcoder.getInstance().transcode(
+      wemFilePath,
+      format
+    )
     await rename(tempPath, targetPath)
     return targetPath
   }
@@ -222,6 +313,59 @@ export class Bnk {
     }
 
     return results
+  }
+
+  public async addOverrideAudio(id: number, filePath: string): Promise<void> {
+    // transcode and store to temp dir
+    let storePath = null
+    const ext = getExtension(filePath)
+    if (ext !== 'wem') {
+      // transcode to wem
+      storePath = await Transcoder.getInstance().transcode(filePath, 'wem')
+    } else {
+      // copy
+      const randomId = uuidv4()
+      storePath = await join(await LocalDir.getTempDir(), `${randomId}.${ext}`)
+      await copyFile(filePath, storePath)
+    }
+
+    // add to overrideMap
+    this.overrideMap[id] = {
+      id,
+      path: storePath,
+    }
+  }
+
+  /**
+   * Remove override audio
+   */
+  public async removeOverrideAudio(id: number): Promise<void> {
+    const overrideSource = this.overrideMap[id]
+    if (overrideSource) {
+      // 尝试删除临时文件
+      try {
+        if (await exists(overrideSource.path)) {
+          await remove(overrideSource.path)
+          console.debug(`Removed temporary file: ${overrideSource.path}`)
+        }
+      } catch (err) {
+        console.warn(
+          `Failed to remove temporary file ${overrideSource.path}: ${err}`
+        )
+      }
+
+      // remove on flatten map
+      const uniqueId = `${this.getLabel()}-${id}`
+      const flattenNodeMap = this.workspace.flattenNodeMap
+      if (flattenNodeMap[uniqueId]) {
+        delete flattenNodeMap[uniqueId]
+      }
+
+      // remove on source manager
+      SourceManager.getInstance().removeSource(id, this.filePath)
+    }
+
+    delete this.overrideMap[id]
   }
 }
 

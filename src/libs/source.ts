@@ -52,6 +52,29 @@ export class SourceManager {
     }
   }
 
+  public removeSource(id: number | string, fromFilePath?: string) {
+    const sources = this.sources[id]
+    if (!sources) return
+
+    if (fromFilePath) {
+      // 删除特定文件的源
+      const index = sources.findIndex(item => item.from.filePath === fromFilePath)
+      if (index !== -1) {
+        sources.splice(index, 1)
+        console.debug(`Removed source ${id} from ${fromFilePath}`)
+      }
+    } else {
+      // 删除所有源
+      delete this.sources[id]
+      console.debug(`Removed all sources for ${id}`)
+    }
+
+    // 如果数组为空，删除整个条目
+    if (sources && sources.length === 0) {
+      delete this.sources[id]
+    }
+  }
+
   public clearSources() {
     console.debug('clear sources')
     Object.keys(this.sources).forEach((key) => {

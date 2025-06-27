@@ -1,22 +1,25 @@
 import { PckApi } from '@/api/tauri'
 import type { PckHeader } from '@/models/pck'
-import { getFileName } from '@/utils/path'
+import { getExtension, getFileName } from '@/utils/path'
 import { sha256 } from '@/utils'
 import { SourceManager } from '@/libs/source'
 import { exists, rename, mkdir, remove, copyFile } from '@tauri-apps/plugin-fs'
 import { Transcoder, type TargetFormat } from '@/libs/transcode'
 import { reactive, type Reactive } from 'vue'
-import type { ReplaceItem } from '@/libs/bnk'
+import type { OverrideSource } from '@/libs/bnk'
 import { LocalDir } from '@/libs/localDir'
 import { join } from '@tauri-apps/api/path'
+import { v4 as uuidv4 } from 'uuid'
+import { useWorkspaceStore } from '@/stores/workspace'
 
 export class Pck {
   public header: PckHeader
   public name: string = ''
   public filePath: string = ''
+  public overrideMap: Reactive<Record<number, OverrideSource>> = reactive({})
   private _hasData: boolean
   private _label: string = ''
-  public overrideMap: Reactive<Record<string, ReplaceItem>> = reactive({})
+  private workspace = useWorkspaceStore()
 
   constructor(header: PckHeader, hasData: boolean) {
     this.header = header
@@ -72,12 +75,9 @@ export class Pck {
         'PCK file contains data, need to process audio source replacement'
       )
 
-      logger?.info(
-        `Need to replace ${replacedSources.length} audio sources`,
-        {
-          replacedSourceIds: replacedSources.map((s) => s.id),
-        }
-      )
+      logger?.info(`Need to replace ${replacedSources.length} audio sources`, {
+        replacedSourceIds: replacedSources.map((s) => s.id),
+      })
 
       // 创建临时目录存放替换的音源
       const tempDir = await LocalDir.getTempDir()
@@ -105,9 +105,7 @@ export class Pck {
         })
       }
     } else {
-      logger?.debug(
-        'PCK file does not contain data, exporting directly'
-      )
+      logger?.debug('PCK file does not contain data, exporting directly')
     }
 
     // 保存PCK文件
@@ -171,10 +169,66 @@ export class Pck {
     return results
   }
 
-  // public async saveFile(outputPath: string): Promise<void> {
-  //   if (!this.extractDataDir) {
-  //     await this.extractData()
-  //   }
-  //   return PckApi.saveFile(this.header, this.extractDataDir!, outputPath)
-  // }
+  /**
+   * Add override audio.
+   * Can only override existing audio. Adding is not allowed.
+   */
+  public async addOverrideAudio(id: number, filePath: string): Promise<void> {
+    // check if id exists
+    if (!this.header.wem_entries.some((entry) => entry.id === id)) {
+      throw new Error(`Audio ID ${id} not found in this PCK file`)
+    }
+
+    const ext = getExtension(filePath)
+
+    // transcode and store to temp dir
+    let storePath = null
+    if (ext !== 'wem') {
+      // transcode to wem
+      storePath = await Transcoder.getInstance().transcode(filePath, 'wem')
+    } else {
+      // copy
+      const randomId = uuidv4()
+      storePath = await join(await LocalDir.getTempDir(), `${randomId}.${ext}`)
+      await copyFile(filePath, storePath)
+    }
+
+    // add to overrideMap
+    this.overrideMap[id] = {
+      id,
+      path: storePath,
+    }
+  }
+
+  /**
+   * Remove override audio
+   */
+  public async removeOverrideAudio(id: number): Promise<void> {
+    const overrideSource = this.overrideMap[id]
+    if (overrideSource) {
+      // 尝试删除临时文件
+      try {
+        if (await exists(overrideSource.path)) {
+          await remove(overrideSource.path)
+          console.debug(`Removed temporary file: ${overrideSource.path}`)
+        }
+      } catch (err) {
+        console.warn(
+          `Failed to remove temporary file ${overrideSource.path}: ${err}`
+        )
+      }
+
+      // remove on flatten map
+      const uniqueId = `${this.getLabel()}-${id}`
+      const flattenNodeMap = this.workspace.flattenNodeMap
+      if (flattenNodeMap[uniqueId]) {
+        delete flattenNodeMap[uniqueId]
+      }
+
+      // remove on source manager
+      SourceManager.getInstance().removeSource(id, this.filePath)
+    }
+
+    delete this.overrideMap[id]
+  }
 }

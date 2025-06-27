@@ -209,11 +209,9 @@ function handleUndo() {
         })
         break
       case 'Source':
-        // remove replace item
-        const selectedKey = workspace.selectedKey
-        if (selectedKey && typeof selectedKey === 'string') {
-          delete dataNode.value.belongToFile.data.overrideMap[selectedKey]
-        }
+        // remove replace/added item
+        const sourceId = data.value.id
+        dataNode.value.belongToFile.data.removeOverrideAudio(sourceId)
         break
     }
     // restore status
@@ -306,11 +304,10 @@ async function tryGetOriginalAudio(): Promise<string | null> {
 }
 
 async function tryGetReplacedAudio(): Promise<string | null> {
-  // 需要找到当前节点的唯一ID
-  const selectedKey = workspace.selectedKey
-  if (!selectedKey || typeof selectedKey !== 'string') return null
+  if (!data.value) return null
 
-  const replaceItem = dataNode.value?.belongToFile.data.overrideMap[selectedKey]
+  const sourceId = data.value.id
+  const replaceItem = dataNode.value?.belongToFile.data.overrideMap[sourceId]
   if (!replaceItem) return null
 
   const wemFilePath = replaceItem.path
@@ -349,15 +346,15 @@ async function fetchOriginalAudio(): Promise<string> {
  */
 async function fetchReplacedAudio(): Promise<string> {
   try {
-    // 需要找到当前节点的唯一ID
-    const selectedKey = workspace.selectedKey
-    if (!selectedKey || typeof selectedKey !== 'string') {
-      throw new Error('selectedKey not found or not a string')
+    if (!data.value) {
+      throw new Error('data.value not found')
     }
 
-    const replaceItem = dataNode.value?.belongToFile.data.overrideMap[selectedKey]
+    const sourceId = data.value.id
+    const replaceItem =
+      dataNode.value?.belongToFile.data.overrideMap[sourceId]
     if (!replaceItem) {
-      throw new Error('replace item not found in workspace.replaceList')
+      throw new Error('replace item not found in overrideMap')
     }
 
     const wemFilePath = replaceItem.path
