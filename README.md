@@ -1,16 +1,55 @@
-# Tauri + Vue + TypeScript
+# MHWs Sound Modder
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+A modern cross-platform tool for modding sound files in Monster Hunter: Wilds. Built with Tauri and Vue3.
 
-## Recommended IDE Setup
+## Features
 
-- [VS Code](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- 🎵 Import and export BNK/PCK sound files
+- 🌳 Tree view for BNK file structure
+- 🔊 Preview audio files directly in the application
+- 🎨 Modern and intuitive user interface
+- 🛠️ Built-in audio transcoding support (need ffmpeg and vgmstream)
 
-## Type Support For `.vue` Imports in TS
+User manual: [English](docs/UserManual.md) | [简体中文](UserManualZhCN.md)
 
-Since TypeScript cannot handle type information for `.vue` imports, they are shimmed to be a generic Vue component type by default. In most cases this is fine if you don't really care about component prop types outside of templates. However, if you wish to get actual prop types in `.vue` imports (for example to get props validation when using manual `h(...)` calls), you can enable Volar's Take Over mode by following these steps:
+## Installation
 
-1. Run `Extensions: Show Built-in Extensions` from VS Code's command palette, look for `TypeScript and JavaScript Language Features`, then right click and select `Disable (Workspace)`. By default, Take Over mode will enable itself if the default TypeScript extension is disabled.
-2. Reload the VS Code window by running `Developer: Reload Window` from the command palette.
+1. Download the latest release from the [Releases](https://github.com/eigeen/mhws-sound-modder/releases) page.
+2. Unzip downloaded zip file.
+3. See [External Components](#external-components) section for required components setup.
 
-You can learn more about Take Over mode [here](https://github.com/johnsoncodehk/volar/discussions/471).
+## External Components
+
+Most external components can be placed in the application directory, except for `Wwise` which requires installation through the official installer.
+
+- [**FFmpeg**](https://ffmpeg.org): Used for converting non-wav/wem audio formats. This enables importing various audio formats including mp3, aac, flac, etc. [Download](https://ffmpeg.org/download.html).
+- [**vgmstream**](https://ffmpeg.org/download.html): Included in the release. Used for converting wem to wav. Without it, audio preview and wav extraction will not be available.
+- [**WwiseConsole**](https://www.audiokinetic.com/wwise/overview/): Requires Wwise installation, will be automatically detected. Used for converting wav to wem. Without it, audio importing will not be available.
+
+## Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start development server
+pnpm tauri dev
+
+# Build for production
+pnpm tauri build
+```
+
+### Acknowledgments
+
+- [Tauri](https://tauri.app/) - For the framework
+- [Vue.js](https://vuejs.org/) - For the frontend framework
+- [Vuetify](https://vuetifyjs.com/) - For the UI components
+
+## License
+
+[MIT License](LICENSE)
+
+## Credits
+
+[bnnm/wwiser](https://github.com/bnnm/wwiser): The best Wwise Bnk parser.
+[RaidingForPants/hd2-audio-modder](https://github.com/RaidingForPants/hd2-audio-modder): Inspiration for this app's UI/UX.
