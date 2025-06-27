@@ -5,36 +5,31 @@ import {
   save as saveDialog,
 } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { useDark, useToggle } from '@vueuse/core'
+import { useDark } from '@vueuse/core'
 import type { DropEvent, TreeNode } from '@/components/DragOverTree.vue'
-import { computed, type Reactive, reactive, ref, toRef, watch } from 'vue'
-import { Bnk, type HircNode, type OverrideSource } from '@/libs/bnk'
-import { ShowError, ShowInfo, ShowWarn } from '@/utils/message'
+import { computed, reactive, ref } from 'vue'
+import { Bnk } from '@/libs/bnk'
+import { ShowError, ShowInfo } from '@/utils/message'
 import type DragOverTree from '@/components/DragOverTree.vue'
 import type { SearchResult, SearchSource } from '@/components/Toolbar.vue'
-import { useWorkspaceStore } from '@/stores/workspace'
-import type { BnkFile, DataNode, PckFile } from '@/stores/workspace'
-import { getExtension, getFileStem } from '@/utils/path'
-import {
-  TargetFormatList,
-  Transcoder,
-  type TargetFormat,
-} from '@/libs/transcode'
+import { getFileStem } from '@/utils/path'
+import { TargetFormatList, type TargetFormat } from '@/libs/transcode'
 import { SourceManager } from '@/libs/source'
 import { writeText as writeTextToClipboard } from '@tauri-apps/plugin-clipboard-manager'
-import { arrayCompare, readFileMagic } from '@/utils'
 import { Pck } from '@/libs/pck'
 
-import { LocalDir } from '@/libs/localDir'
 import { mkdir, copyFile, exists } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
-import { exportLogger } from '@/utils/logger'
 import { useStatusStore } from '@/stores/status'
 
-const workspace = useWorkspaceStore()
+// 引入 WorkspaceCore 和 workspace store
+import { workspaceCore } from '@/libs/workspaceCore'
+import { useWorkspaceStore } from '@/stores/workspace'
+
 const sourceManager = SourceManager.getInstance()
 const isDark = useDark()
 const statusStore = useStatusStore()
+const workspace = useWorkspaceStore()
 
 const dragTreeRef = ref<InstanceType<typeof DragOverTree>>()
 const infoPanelRef = ref<InstanceType<typeof InfoPanel>>()
@@ -50,177 +45,7 @@ const nodeClickState = reactive({
   timer: undefined as number | undefined,
 })
 
-const selectedDataNode = computed<DataNode | null>(() => {
-  if (!workspace.selectedKey) {
-    return null
-  }
-
-  const targetNode = workspace.flattenNodeMap[workspace.selectedKey]
-  if (!targetNode) {
-    console.info(
-      'Selected key not found in flatten map:',
-      workspace.selectedKey
-    )
-    return null
-  }
-  return targetNode
-})
-
-const workspaceVisualTree = ref<TreeNode[]>([])
-
-// 提取树构建逻辑，避免重复代码
-function buildWorkspaceVisualTree() {
-  console.debug('workspaceVisualTree recompute')
-  function getDirtyRef(id: string | number) {
-    return (
-      (toRef(workspace.flattenNodeMap[id], 'dirty') as unknown as boolean) ??
-      false
-    )
-  }
-  function iterNodes(parent: TreeNode, node: HircNode) {
-    if (!parent.children) {
-      parent.children = []
-    }
-
-    let childNode: TreeNode
-    switch (node.type) {
-      case 'MusicSegment':
-        childNode = {
-          label: `Segment ${node.id}`,
-          key: node.id,
-          icon: 'mdi-segment',
-          dirty: getDirtyRef(node.id),
-          children: [],
-        }
-        node.children.forEach((child) => {
-          iterNodes(childNode, child)
-        })
-        parent.children.push(childNode)
-        break
-      case 'MusicTrack':
-        childNode = {
-          label: `Track ${node.id}`,
-          key: node.id,
-          icon: 'mdi-waveform',
-          dirty: getDirtyRef(node.id),
-          children: [],
-        }
-        const playlist = node.playlist
-          .map((item) => {
-            if (item.elementType === 'Source') {
-              return {
-                label: `${item.element_id}.wem`,
-                key: item.id,
-                icon: 'mdi-file-music',
-                dirty: getDirtyRef(item.id),
-                children: [],
-              }
-            } else {
-              return null
-            }
-          })
-          .filter((item) => item !== null) as TreeNode[]
-        childNode.children = playlist
-        parent.children.push(childNode)
-        break
-    }
-  }
-
-  const result = workspace.files.map((file) => {
-    const root: TreeNode = {
-      label: file.data.name,
-      key: file.data.filePath,
-      children: [],
-    }
-    if (file.type === 'bnk') {
-      root.type = 'bnk'
-      // build segment tree
-      file.data.getSegmentTree().nodes.forEach((node) => {
-        iterNodes(root, node)
-      })
-      // collect unmanaged wems
-      const unmanagedSources = file.data.getUnmanagedSources()
-      unmanagedSources.forEach((elementId) => {
-        const uniqueId = `${file.data.getLabel()}-${elementId}`
-        root.children!.push({
-          label: `${elementId}.wem`,
-          key: uniqueId,
-          icon: 'mdi-file-music',
-          dirty: getDirtyRef(uniqueId),
-        })
-      })
-
-      // 添加 overrideMap 中的新增音频到视觉树
-      Object.entries(file.data.overrideMap).forEach(([sourceIdStr, replaceItem]) => {
-        const sourceId = Number(sourceIdStr)
-        const uniqueId = `${file.data.getLabel()}-${sourceId}`
-        // 检查是否已经在上面的循环中添加过了
-        const existingChildIndex = root.children!.findIndex(child => child.key === uniqueId)
-        if (existingChildIndex === -1) {
-          // 这是一个新增的音频，添加到视觉树
-          root.children!.push({
-            label: `${sourceId}.wem`,
-            key: uniqueId,
-            icon: 'mdi-file-music',
-            dirty: getDirtyRef(uniqueId),
-          })
-        }
-      })
-    } else if (file.type === 'pck') {
-      root.type = 'pck'
-      if (!file.data.hasData()) {
-        root.label = `${file.data.name} (no data)`
-      }
-      file.data.header.wem_entries.forEach((entry) => {
-        const uniqueId = `${file.data.getLabel()}-${entry.id}`
-        root.children!.push({
-          label: `${entry.id}.wem`,
-          key: uniqueId,
-          icon: 'mdi-file-music',
-          dirty: getDirtyRef(uniqueId),
-        })
-      })
-
-      // 添加 overrideMap 中的新增音频到视觉树
-      Object.entries(file.data.overrideMap).forEach(([sourceIdStr, replaceItem]) => {
-        const sourceId = Number(sourceIdStr)
-        const uniqueId = `${file.data.getLabel()}-${sourceId}`
-        // 检查是否已经在上面的循环中添加过了
-        const existingChildIndex = root.children!.findIndex(child => child.key === uniqueId)
-        if (existingChildIndex === -1) {
-          // 这是一个新增的音频，添加到视觉树
-          root.children!.push({
-            label: `${sourceId}.wem`,
-            key: uniqueId,
-            icon: 'mdi-file-music',
-            dirty: getDirtyRef(uniqueId),
-          })
-        }
-      })
-    }
-    return root
-  })
-
-  workspaceVisualTree.value = result
-}
-
-// 监听文件数组变化（添加/删除文件）
-watch(workspace.files, buildWorkspaceVisualTree, { deep: false })
-
-// 单独监听 overrideMap 的变化
-watch(
-  () => workspace.files.map(file => file.data.overrideMap),
-  () => {
-    console.debug('overrideMap changed, rebuilding tree')
-    buildWorkspaceVisualTree()
-  },
-  { deep: true } // 这里需要 deep，但只监听 overrideMap
-)
-
-// const workspaceVisualTree = computed<TreeNode[]>(() => {
-
-// })
-
+// 搜索相关状态
 const isSearchExpanded = ref(false)
 const searchKeyword = ref('')
 const searchSource = computed(() => {
@@ -243,7 +68,7 @@ const searchSource = computed(() => {
     children: [],
   }
   // build a minimal tree structure for search
-  workspaceVisualTree.value.forEach((node) => {
+  workspace.visualTree.forEach((node) => {
     dfs(node, rootSource)
   })
   return rootSource
@@ -267,7 +92,7 @@ function handleSearchFocus(
   // locate target node in visual tree
   // get target label
   let keys: (string | number)[] = []
-  let tempNodes: TreeNode[] = workspaceVisualTree.value
+  let tempNodes: TreeNode[] = workspace.visualTree
   for (let index = 0; index < result.path.length; index++) {
     const nodeIndex = result.path[index]
     const node = tempNodes[nodeIndex]
@@ -311,42 +136,8 @@ async function handleOpenFileDialog() {
       })) ?? []
     console.info('Selected files:', selected)
 
-    const filesToAdd: Array<BnkFile | PckFile> = []
-    for (const filePath of selected) {
-      const isDuplicate =
-        workspace.files.some((file) => file.data.filePath === filePath) ||
-        filesToAdd.some((file) => file.data.filePath === filePath)
-      if (isDuplicate) {
-        ShowInfo(`File already opened: ${filePath}`)
-        continue
-      }
-
-      let file: BnkFile | PckFile
-      const magic = await readFileMagic(filePath)
-      if (arrayCompare(magic, [0x42, 0x4b, 0x48, 0x44])) {
-        // BKHD
-        const bnk = await Bnk.load(filePath)
-        file = {
-          type: 'bnk',
-          data: bnk,
-        }
-      } else if (arrayCompare(magic, [0x41, 0x4b, 0x50, 0x4b])) {
-        // AKPK
-        const pck = await Pck.load(filePath)
-        file = {
-          type: 'pck',
-          data: pck,
-        }
-      } else {
-        ShowError(`Unsupported file type, ${filePath}`)
-        continue
-      }
-      filesToAdd.push(file)
-    }
-
-    // Add to workspace
-    if (filesToAdd.length > 0) {
-      workspace.files.push(...filesToAdd)
+    if (selected.length > 0) {
+      await workspaceCore.openFiles(selected)
     }
   } catch (err) {
     ShowError(`Failed to open file: ${err}`)
@@ -354,215 +145,55 @@ async function handleOpenFileDialog() {
 }
 
 async function handleExport() {
+  const { exportLogger } = await import('@/utils/logger')
+
   try {
-    // 启动日志记录（不指定目录）
+    // Start logging without specifying directory
     exportLogger.start()
-    exportLogger.info('Export process started')
+    exportLogger.info('User initiated export operation')
 
-    const filesToExport = new Map<string, Reactive<BnkFile | PckFile>>() // filePath -> file
-
-    // 1. 检查是否有HIRC被更改
-    exportLogger.debug('Checking for dirty HIRC nodes')
-    Object.entries(workspace.flattenNodeMap).forEach(([uniqueId, node]) => {
-      if (node.dirty) {
-        const file = node.belongToFile
-        filesToExport.set(file.data.filePath, file)
-        exportLogger.debug(
-          `Found dirty node, need to export file: ${file.data.name}`,
-          { nodeId: uniqueId, nodeType: node.data?.type }
-        )
-      }
-    })
-
-    // 2. 检查是否有音源被替换或新增
-    exportLogger.debug('Checking for replaced/added audio sources')
-    workspace.files.forEach((file) => {
-      Object.entries(file.data.overrideMap).forEach(
-        ([uniqueId, replaceItem]) => {
-          const node = workspace.flattenNodeMap[uniqueId]
-          if (node) {
-            // 现有音频的替换
-            filesToExport.set(
-              node.belongToFile.data.filePath,
-              node.belongToFile
-            )
-            exportLogger.debug(
-              `Found replaced audio source, need to export file: ${node.belongToFile.data.name}`,
-              {
-                uniqueId,
-                replaceItem: { id: replaceItem.id, path: replaceItem.path },
-              }
-            )
-          } else {
-            // 新增音频，没有对应node，直接添加文件到导出列表
-            filesToExport.set(file.data.filePath, file)
-            exportLogger.debug(
-              `Found added audio source, need to export file: ${file.data.name}`,
-              {
-                uniqueId,
-                replaceItem: { id: replaceItem.id, path: replaceItem.path },
-              }
-            )
-          }
-        }
-      )
-    })
-
-    if (filesToExport.size === 0) {
-      exportLogger.warn('No files to export')
-      ShowInfo('No files to export')
-      exportLogger.terminate()
-      return
-    }
-
-    exportLogger.info(`Found ${filesToExport.size} files to export`, {
-      fileNames: Array.from(filesToExport.values()).map((f) => f.data.name),
-    })
-
-    // 选择导出目录
-    exportLogger.debug('Opening directory selection dialog')
+    // Select export directory
+    exportLogger.debug('Selecting export directory')
     const exportDir = await openDialog({
       directory: true,
       multiple: false,
     })
+
     if (!exportDir) {
-      exportLogger.warn('User cancelled export directory selection')
+      exportLogger.warn('User cancelled directory selection')
       exportLogger.terminate()
       return
     }
 
-    // 设置日志保存目录
+    // Set log save directory
     exportLogger.setLogDirectory(exportDir)
     exportLogger.info(`Export directory selected: ${exportDir}`)
 
-    // 导出每个文件
-    let successCount = 0
-    let errorCount = 0
+    await workspaceCore.exportFiles(exportDir)
 
-    for (const [filePath, file] of filesToExport) {
-      try {
-        exportLogger.info(`Starting to export file: ${file.data.name}`, {
-          filePath,
-          fileType: file.type,
-        })
-
-        const exportPath = await join(exportDir, file.data.name)
-
-        if (file.type === 'bnk') {
-          const bnk = file.data as Bnk
-
-          // 使用 BNK 实例的导出方法（音源替换收集已集成到方法内部）
-          await bnk.exportFile(exportPath, exportLogger)
-        } else if (file.type === 'pck') {
-          const pck = file.data as Pck
-
-          // 使用 PCK 实例的导出方法（音源替换收集已集成到方法内部）
-          await pck.exportFile(exportPath, exportLogger)
-        }
-
-        successCount++
-        exportLogger.info(`File export completed: ${file.data.name}`)
-      } catch (err) {
-        errorCount++
-        exportLogger.error(`Failed to export file: ${file.data.name}`, {
-          error: err,
-          filePath,
-        })
-      }
-    }
-
-    // 结束日志记录并保存文件
+    // Export completed, save logs
     await exportLogger.end()
 
-    const finalMessage = `Export completed: ${successCount} files succeeded, ${errorCount} files failed`
-    if (errorCount > 0) {
-      ShowWarn(finalMessage)
-    } else {
-      ShowInfo(finalMessage)
-    }
   } catch (err) {
-    exportLogger.error('Export process encountered an error', { error: err })
-    await exportLogger.end()
+    exportLogger.error('Error occurred during export process', { error: err })
     ShowError(`Export failed: ${err}`)
+
+    // Save logs even when error occurs
+    await exportLogger.end()
   }
-}
-
-const AUDIO_EXTS: Record<string, boolean> = {
-  wem: true,
-  wav: true,
-  ogg: true,
-  flac: true,
-  mp3: true,
-  aac: true,
-}
-
-async function importAudio(uniqueId: string, filePath: string) {
-  const node = workspace.flattenNodeMap[uniqueId]
-  if (!node) {
-    ShowError('Node not found')
-    return
-  }
-  if (node.data.type !== 'Source') {
-    ShowError('Audio import is only supported for source nodes.')
-    return
-  }
-
-  // check if file is audio file
-  const ext = getExtension(filePath)
-  console.debug('ext', ext, AUDIO_EXTS[ext!])
-  if (!ext || !AUDIO_EXTS[ext]) {
-    ShowError(`Unsupported file type: ${ext ?? '<no extension>'}`)
-    return
-  }
-
-  let outputPath: string
-  // transcode if not wem
-  if (ext === 'wem') {
-    // copy to temp dir
-    const tempDir = await LocalDir.getTempDir()
-    outputPath = await join(tempDir, `${node.data.id}.wem`)
-    await copyFile(filePath, outputPath)
-  } else {
-    try {
-      outputPath = await Transcoder.getInstance().transcode(filePath, 'wem')
-    } catch (err) {
-      ShowError(`Failed to transcode: ${err}`)
-      return
-    }
-    console.debug('transcode outputPath', outputPath)
-  }
-
-  // add to replace list
-  const sourceId = node.data.id
-  node.belongToFile.data.addOverrideAudio(sourceId, outputPath)
-  console.info(
-    `replace audio successfully: ${sourceId} -> ${outputPath} (from uniqueId: ${uniqueId})`
-  )
-
-  // // apply parent linked changes
-  // let loopGuard = 32
-  // let parentNode: DataNode | null = node
-  // while (node.parent && loopGuard > 0) {
-  //   loopGuard--
-  //   parentNode = node.parent
-  //   switch (parentNode.data.type) {
-  //     case 'MusicTrack':
-  //       // TODO: update src duration
-  //       break
-  //     case 'MusicSegment':
-  //       // nothing
-  //       break
-  //   }
-  // }
 }
 
 async function handleDrop(event: DropEvent) {
   console.debug('handleDrop event', event)
   const { key, paths } = event
 
-  // currently we only support single file drop
-  // multiple file drop will be supported in the future
-  await importAudio(key, paths[0])
+  try {
+    // currently we only support single file drop
+    // multiple file drop will be supported in the future
+    await workspaceCore.importAudio(key, paths[0])
+  } catch (err) {
+    ShowError(`Failed to import audio: ${err}`)
+  }
 }
 
 async function handleDumpAudio(uniqueId: string, format: TargetFormat) {
@@ -700,14 +331,6 @@ async function handleDumpFile(filePath: string, format: TargetFormat) {
 
 async function handleAddAudio(filePath: string) {
   try {
-    const file = workspace.files.find((f) => f.data.filePath === filePath)
-    if (!file) {
-      throw new Error('File not found')
-    }
-    if (file.type !== 'bnk') {
-      throw new Error('Can only add audio to BNK file')
-    }
-
     // 选择要添加的音频文件
     const audioFilePath = await openDialog({
       filters: [
@@ -739,16 +362,7 @@ async function handleAddAudio(filePath: string) {
       throw new Error(`Invalid audio ID: ${id}`)
     }
 
-    // 检查ID是否已存在
-    const bnk = file.data as Bnk
-    const uniqueId = `${bnk.getLabel()}-${id}`
-    if (workspace.flattenNodeMap[uniqueId]) {
-      throw new Error(`Audio ID ${id} already exists in this BNK file`)
-    }
-
-    // 添加音频
-    await bnk.addOverrideAudio(id, audioFilePath)
-    ShowInfo(`Audio ${id}.wem added successfully`)
+    await workspaceCore.addAudio(filePath, id, audioFilePath)
   } catch (err) {
     ShowError(`Failed to add audio: ${err}`)
   }
@@ -785,7 +399,7 @@ function handleNodeClick(data: TreeNode) {
 function handleDeleteNode(data: TreeNode) {
   console.debug('handleDeleteNode', data)
   const filePath = data.key as string
-  workspace.removeFile(filePath)
+  workspaceCore.closeFile(filePath)
 }
 
 async function handleImportAudioViaDialog(uniqueId: string) {
@@ -800,7 +414,11 @@ async function handleImportAudioViaDialog(uniqueId: string) {
     directory: false,
   })
   if (selected) {
-    await importAudio(uniqueId, selected)
+    try {
+      await workspaceCore.importAudio(uniqueId, selected)
+    } catch (err) {
+      ShowError(`Failed to import audio: ${err}`)
+    }
   }
 }
 
@@ -867,7 +485,7 @@ const contextMenuItems = [
   // bnk
   {
     show: (data: TreeNode | null) => data?.type === 'bnk',
-    icon: 'mdi-add',
+    icon: 'mdi-plus',
     label: 'Add Audio',
     value: 'add-audio-bnk',
     action: async (data: TreeNode | null) => {
@@ -978,7 +596,7 @@ const contextMenuItems = [
           <DragOverTree
             ref="dragTreeRef"
             v-model:selected="workspace.selectedKey"
-            :data="workspaceVisualTree"
+            :data="workspace.visualTree"
             @drop="handleDrop"
             @node-click="handleNodeClick"
           >
@@ -1010,7 +628,7 @@ const contextMenuItems = [
         <div class="info-panel">
           <InfoPanel
             ref="infoPanelRef"
-            v-model="selectedDataNode"
+            v-model="workspace.selectedNode"
           ></InfoPanel>
         </div>
       </template>

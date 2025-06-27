@@ -2,7 +2,6 @@
 import type { MusicSegmentNode, MusicTrackNode, PlayListItem } from '@/libs/bnk'
 import { SourceManager, type SourceInfo } from '@/libs/source'
 import { Transcoder } from '@/libs/transcode'
-import { useWorkspaceStore } from '@/stores/workspace'
 import type { DataNode, DataNodePayload } from '@/stores/workspace'
 import { ShowError } from '@/utils/message'
 import { convertFileSrc } from '@tauri-apps/api/core'
@@ -10,6 +9,7 @@ import { exists, rename } from '@tauri-apps/plugin-fs'
 import { computed, ref, watch, onUnmounted, reactive } from 'vue'
 import AudioPlayer from './AudioPlayer.vue'
 import { getLoudnessInfo, type LoudnessInfo } from '@/api/tauri'
+import { workspaceCore } from '@/libs/workspaceCore'
 
 const dataNode = defineModel<DataNode | null>({ required: true })
 
@@ -44,7 +44,6 @@ defineExpose({
   },
 })
 
-const workspace = useWorkspaceStore()
 const sourceManager = SourceManager.getInstance()
 
 let ignoreNextChange = false
@@ -239,7 +238,7 @@ async function updateLoudnessInfo() {
     // original audio path
     const originalPath = await tryGetOriginalAudio()
     if (originalPath) {
-      const cachedInfo = workspace.loudnessCache[originalPath]
+      const cachedInfo = workspaceCore.getLoudnessCacheByPath(originalPath)
       if (cachedInfo) {
         loudnessInfo.original = cachedInfo
       } else {
@@ -247,7 +246,7 @@ async function updateLoudnessInfo() {
         console.debug('calculate original loudness info')
         // background calculate
         getLoudnessInfo(originalPath).then((info) => {
-          workspace.loudnessCache[originalPath] = info
+          workspaceCore.setLoudnessCache(originalPath, info)
           // data changed, don't update current
           if (dataId === data.value?.id) {
             loudnessInfo.original = info
@@ -259,7 +258,7 @@ async function updateLoudnessInfo() {
     // replaced audio path
     const replacedPath = await tryGetReplacedAudio()
     if (replacedPath) {
-      const cachedInfo = workspace.loudnessCache[replacedPath]
+      const cachedInfo = workspaceCore.getLoudnessCacheByPath(replacedPath)
       if (cachedInfo) {
         loudnessInfo.replaced = cachedInfo
       } else {
@@ -267,7 +266,7 @@ async function updateLoudnessInfo() {
         console.debug('calculate replaced loudness info')
         // background calculate
         getLoudnessInfo(replacedPath).then((info) => {
-          workspace.loudnessCache[replacedPath] = info
+          workspaceCore.setLoudnessCache(replacedPath, info)
           // data changed, don't update current
           if (dataId === data.value?.id) {
             loudnessInfo.replaced = info
