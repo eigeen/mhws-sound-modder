@@ -1,12 +1,18 @@
 # Changelog
 
+## v0.2.1
+
+Fixed issue when copy audio id.
+
+Also change PlayAt field when dragging Trim Range.
+
 ## v0.2.0
 
 ### Refactor
 
 Major refactoring of core data processing modules.
 
-# Feature
+### Feature
 
 Support for adding new audio in BNK files.
 
