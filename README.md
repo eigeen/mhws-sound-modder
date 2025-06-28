@@ -10,7 +10,7 @@ A modern cross-platform tool for modding sound files in Monster Hunter: Wilds. B
 - 🎨 Modern and intuitive user interface
 - 🛠️ Built-in audio transcoding support (need ffmpeg and vgmstream)
 
-User manual: [English](docs/UserManual.md) | [简体中文](UserManualZhCN.md)
+User manual: [English](docs/UserManual.md) | [简体中文](docs/UserManualZhCN.md)
 
 ## Installation
 
@@ -52,4 +52,5 @@ pnpm tauri build
 ## Credits
 
 [bnnm/wwiser](https://github.com/bnnm/wwiser): The best Wwise Bnk parser.
+
 [RaidingForPants/hd2-audio-modder](https://github.com/RaidingForPants/hd2-audio-modder): Inspiration for this app's UI/UX.
