@@ -143,6 +143,8 @@ const rangeSliderValue = computed<number[]>({
       listItemSelected.value.beginTrimOffset = v[0]
       listItemSelected.value.endTrimOffset =
         v[1] - listItemSelected.value.srcDuration
+      // also change playAt
+      listItemSelected.value.playAt = -v[0]
     }
   },
 })
@@ -350,8 +352,7 @@ async function fetchReplacedAudio(): Promise<string> {
     }
 
     const sourceId = data.value.id
-    const replaceItem =
-      dataNode.value?.belongToFile.data.overrideMap[sourceId]
+    const replaceItem = dataNode.value?.belongToFile.data.overrideMap[sourceId]
     if (!replaceItem) {
       throw new Error('replace item not found in overrideMap')
     }
