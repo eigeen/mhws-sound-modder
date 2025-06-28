@@ -445,7 +445,8 @@ const contextMenuItems = [
     value: 'copy-id',
     action: (data: TreeNode | null) => {
       if (!data) return
-      if (data.type === 'Source') {
+
+      if (data.icon === 'mdi-file-music') {
         const node = workspace.flattenNodeMap[data.key]
         if (!node) return
         writeTextToClipboard(node.data.id.toString())
